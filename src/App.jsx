@@ -3,7 +3,10 @@ import { createClient } from '@supabase/supabase-js';
 import Papa from 'papaparse';
 import { toPng } from 'html-to-image'; // Import the image converter
 
-const supabase = createClient('YOUR_SUPABASE_URL', 'YOUR_SUPABASE_ANON_KEY');
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL, 
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
 
 export default function SeatingPlanner() {
   const [session, setSession] = useState(null);
