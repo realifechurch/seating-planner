@@ -58,8 +58,21 @@ export default function SeatingPlanner() {
       Papa.parse(file, {
         header: true, skipEmptyLines: true,
         complete: (results) => {
-          const names = results.data.map(row => row.Name || Object.values(row)[0]).filter(Boolean);
-          setUnassigned(prev => [...new Set([...prev, ...names])]);
+          const importedNames = results.data.map(row => row.Name || Object.values(row)[0]).filter(Boolean);
+          
+          // Requirement 3: Recognize names already on tables or in current list
+          const currentlySeated = Object.values(tables).flat();
+          const existingList = [...unassigned, ...currentlySeated];
+          
+          const uniqueNewNames = importedNames.filter(name => !existingList.includes(name));
+          
+          if (uniqueNewNames.length === 0) {
+            alert("All names in this file are already present in the planner.");
+            return;
+          }
+          
+          setUnassigned(prev => [...prev, ...uniqueNewNames]);
+          e.target.value = null; // Reset file input
         }
       });
     }
@@ -85,6 +98,13 @@ export default function SeatingPlanner() {
     setTablePos(prev => ({ ...prev, [nextId]: { section: sectionId, x: 50, y: 50 } }));
   };
 
+  // Requirement 2: Clear List function
+  const clearGuestList = () => {
+    if (window.confirm("Are you sure you want to clear the unassigned guest list? This will not affect guests already at tables.")) {
+      setUnassigned([]);
+    }
+  };
+
   if (!session) {
     return (
       <div className="h-screen w-screen bg-slate-900 flex items-center justify-center p-4">
@@ -107,19 +127,31 @@ export default function SeatingPlanner() {
           <button onClick={() => supabase.auth.signOut()} className="text-[9px] text-slate-400 hover:text-white underline">LOGOUT</button>
         </div>
 
+        {/* Requirement 1: Saved Plans with Timestamps */}
         <div className="mb-4 bg-slate-900/50 p-3 rounded-lg border border-slate-700">
-          <span className="text-[9px] text-slate-500 uppercase font-black mb-2 block">Saved Plans</span>
-          <div className="max-h-24 overflow-y-auto space-y-1 custom-scrollbar">
+          <span className="text-[9px] text-slate-500 uppercase font-black mb-2 block">Version History</span>
+          <div className="max-h-32 overflow-y-auto space-y-1 custom-scrollbar">
             {plans.map(p => (
               <button key={p.id} onClick={() => { setPlanName(p.name); setCurrentPlanId(p.id); setUnassigned(p.data.unassigned); setTables(p.data.tables); setTablePos(p.data.tablePos); }}
-                className={`w-full text-left p-2 rounded text-[10px] border transition-all ${currentPlanId === p.id ? 'bg-indigo-900/40 border-indigo-500 text-indigo-200' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
-                {p.name}
+                className={`w-full text-left p-2 rounded text-[10px] border transition-all flex flex-col ${currentPlanId === p.id ? 'bg-indigo-900/40 border-indigo-500 text-indigo-200' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'}`}>
+                <span className="font-bold">{p.name}</span>
+                <span className="text-[8px] opacity-60">
+                  {new Date(p.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                </span>
               </button>
             ))}
           </div>
         </div>
         
-        <label className="w-full bg-indigo-600 text-center p-2 rounded cursor-pointer font-bold text-[10px] mb-4 hover:bg-indigo-500 transition shadow-md">+ IMPORT CSV<input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} /></label>
+        <div className="flex gap-2 mb-4">
+          <label className="flex-1 bg-indigo-600 text-center p-2 rounded cursor-pointer font-bold text-[10px] hover:bg-indigo-500 transition shadow-md">
+            + IMPORT CSV<input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
+          </label>
+          {/* Requirement 2: Clear List Button */}
+          <button onClick={clearGuestList} className="bg-slate-700 text-slate-300 p-2 rounded font-bold text-[10px] hover:bg-red-900 hover:text-white transition">
+            CLEAR
+          </button>
+        </div>
 
         <input type="text" placeholder="Search guests..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full bg-slate-900 border border-slate-700 p-2 rounded text-[10px] mb-2 focus:border-indigo-500 outline-none" />
@@ -150,13 +182,13 @@ export default function SeatingPlanner() {
 
       {/* VIEWPORT */}
       <div className="flex-1 flex flex-col p-6 overflow-hidden">
-        <div className="flex justify-between items-center mb-4 px-6 py-3 bg-slate-800 rounded-xl border border-slate-700">
+        <div className="flex justify-between items-center mb-4 px-6 py-3 bg-slate-800 rounded-xl border border-slate-700 shadow-lg">
           <div className="flex gap-10">
             <div className="flex flex-col"><span className="text-[9px] text-slate-400 uppercase font-black tracking-widest">Unassigned</span><span className="text-xl font-black text-indigo-400">{stats.unassigned}</span></div>
             <div className="flex flex-col"><span className="text-[9px] text-slate-400 uppercase font-black tracking-widest">Seated</span><span className="text-xl font-black text-emerald-400">{stats.seated}</span></div>
           </div>
-          <button onClick={() => toPng(canvasRef.current).then(data => { const a = document.createElement('a'); a.download = 'plan.png'; a.href = data; a.click(); })}
-                  className="bg-white text-slate-900 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-tight shadow-sm">EXPORT PNG</button>
+          <button onClick={() => toPng(canvasRef.current).then(data => { const a = document.createElement('a'); a.download = `${planName || 'plan'}.png`; a.href = data; a.click(); })}
+                  className="bg-white text-slate-900 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-tight shadow-sm hover:bg-indigo-50 transition">EXPORT PNG</button>
         </div>
 
         {/* 6-SECTION GRID CANVAS */}
