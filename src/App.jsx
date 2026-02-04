@@ -32,7 +32,6 @@ export default function SeatingPlanner() {
     return unassigned.filter(name => name.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [unassigned, searchTerm]);
 
-  // Auth & Session management
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session));
@@ -43,14 +42,10 @@ export default function SeatingPlanner() {
     if (session) fetchPlans();
   }, [session]);
 
-  // AUTO-SAVE LOGIC: Trigger every 5 minutes
+  // AUTO-SAVE: 5-minute interval
   useEffect(() => {
     if (!session || !planName || !currentPlanId) return;
-
-    const autoSaveInterval = setInterval(() => {
-      performAutoSave();
-    }, 300000); // 5 minutes in ms
-
+    const autoSaveInterval = setInterval(() => performAutoSave(), 300000);
     return () => clearInterval(autoSaveInterval);
   }, [session, planName, currentPlanId, unassigned, tables, tablePos]);
 
@@ -61,18 +56,34 @@ export default function SeatingPlanner() {
 
   const performAutoSave = async () => {
     setIsAutoSaving(true);
-    const payload = { 
-      name: planName, 
-      data: { unassigned, tables, tablePos }, 
-      user_id: session?.user?.id 
-    };
-    
-    const { error } = await supabase
-      .from('seating_plans')
-      .upsert({ id: currentPlanId, ...payload });
+    const payload = { name: planName, data: { unassigned, tables, tablePos }, user_id: session?.user?.id };
+    await supabase.from('seating_plans').upsert({ id: currentPlanId, ...payload });
+    setTimeout(() => setIsAutoSaving(false), 2000);
+    fetchPlans();
+  };
 
-    setTimeout(() => setIsAutoSaving(false), 2000); // Visual feedback
-    if (!error) fetchPlans();
+  // HIGH-RESOLUTION EXPORT LOGIC
+  const exportHighResPng = async () => {
+    if (!canvasRef.current) return;
+    setIsAutoSaving(true); // Reusing state for a "Processing" visual
+    
+    try {
+      const dataUrl = await toPng(canvasRef.current, {
+        quality: 1.0,
+        pixelRatio: 3, // This triples the resolution for a crisp print
+        backgroundColor: '#ffffff',
+        style: { transform: 'scale(1)', transformOrigin: 'top left' }
+      });
+      
+      const link = document.createElement('a');
+      link.download = `${planName || 'Seating-Layout'}-HighRes.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      alert("Export failed. Try a smaller window size.");
+    } finally {
+      setIsAutoSaving(false);
+    }
   };
 
   const handleLogin = async (e) => {
@@ -88,15 +99,10 @@ export default function SeatingPlanner() {
         header: true, skipEmptyLines: true,
         complete: (results) => {
           const importedNames = results.data.map(row => row.Name || Object.values(row)[0]).filter(Boolean);
-          const currentlySeated = Object.values(tables).flat();
-          const existingList = [...unassigned, ...currentlySeated];
-          const uniqueNewNames = importedNames.filter(name => !existingList.includes(name));
-          
-          if (uniqueNewNames.length === 0) {
-            alert("All names are already present.");
-            return;
-          }
-          setUnassigned(prev => [...prev, ...uniqueNewNames]);
+          const seated = Object.values(tables).flat();
+          const existing = [...unassigned, ...seated];
+          const unique = importedNames.filter(n => !existing.includes(n));
+          setUnassigned(prev => [...prev, ...unique]);
           e.target.value = null;
         }
       });
@@ -104,37 +110,28 @@ export default function SeatingPlanner() {
   };
 
   const saveToCloud = async () => {
-    if (!planName) return alert("Please name your configuration.");
-    const payload = { 
-      name: planName, 
-      data: { unassigned, tables, tablePos }, 
-      user_id: session?.user?.id 
-    };
+    if (!planName) return alert("Name your plan first.");
+    const payload = { name: planName, data: { unassigned, tables, tablePos }, user_id: session?.user?.id };
     const { data, error } = await supabase.from('seating_plans').upsert(currentPlanId ? { id: currentPlanId, ...payload } : payload).select();
-    if (error) alert("Sync Error: " + error.message);
-    else { alert("Synced Successfully!"); setCurrentPlanId(data[0].id); fetchPlans(); }
+    if (error) alert(error.message);
+    else { setCurrentPlanId(data[0].id); fetchPlans(); alert("Manual Sync Complete!"); }
   };
 
   const addTable = () => {
     const nextId = Object.keys(tables).length + 1;
-    if (nextId > 30) return alert("Max 30 tables.");
-    const sectionId = Math.ceil(nextId / 5);
+    const sec = Math.ceil(nextId / 5);
     setTables(prev => ({ ...prev, [nextId]: [] }));
-    setTablePos(prev => ({ ...prev, [nextId]: { section: sectionId, x: 50, y: 50 } }));
-  };
-
-  const clearGuestList = () => {
-    if (window.confirm("Clear unassigned list?")) setUnassigned([]);
+    setTablePos(prev => ({ ...prev, [nextId]: { section: sec, x: 50, y: 50 } }));
   };
 
   if (!session) {
     return (
       <div className="h-screen w-screen bg-slate-900 flex items-center justify-center p-4">
         <form onSubmit={handleLogin} className="bg-slate-800 p-8 rounded-xl shadow-2xl w-full max-w-md border border-slate-700">
-          <h1 className="text-white text-2xl font-bold mb-6 text-center tracking-tight uppercase">Login</h1>
+          <h1 className="text-white text-2xl font-bold mb-6 text-center uppercase tracking-tighter">Event Planner Login</h1>
           <input type="email" placeholder="Email" className="w-full bg-slate-900 border border-slate-700 p-3 rounded mb-4 text-white" value={email} onChange={e => setEmail(e.target.value)} />
           <input type="password" placeholder="Password" className="w-full bg-slate-900 border border-slate-700 p-3 rounded mb-6 text-white" value={password} onChange={e => setPassword(e.target.value)} />
-          <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold p-3 rounded transition">ENTER SYSTEM</button>
+          <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold p-3 rounded transition">LOGIN</button>
         </form>
       </div>
     );
@@ -146,13 +143,12 @@ export default function SeatingPlanner() {
       <div className="w-80 bg-slate-800 p-5 flex flex-col border-r border-slate-700 shadow-2xl z-20">
         <div className="flex justify-between items-center mb-6">
           <div className="flex flex-col">
-            <h2 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Guest List ({stats.unassigned})</h2>
-            {isAutoSaving && <span className="text-[8px] text-emerald-400 animate-pulse font-bold">AUTO-SAVING...</span>}
+            <h2 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Floor Plan</h2>
+            {isAutoSaving && <span className="text-[8px] text-emerald-400 animate-pulse font-bold">WORKING...</span>}
           </div>
           <button onClick={() => supabase.auth.signOut()} className="text-[9px] text-slate-400 hover:text-white underline">LOGOUT</button>
         </div>
 
-        {/* VERSION HISTORY */}
         <div className="mb-4 bg-slate-900/50 p-3 rounded-lg border border-slate-700">
           <span className="text-[9px] text-slate-500 uppercase font-black mb-2 block">Version History</span>
           <div className="max-h-32 overflow-y-auto space-y-1 custom-scrollbar">
@@ -168,10 +164,10 @@ export default function SeatingPlanner() {
         
         <div className="flex gap-2 mb-4">
           <label className="flex-1 bg-indigo-600 text-center p-2 rounded cursor-pointer font-bold text-[10px] hover:bg-indigo-500 transition shadow-md">+ IMPORT CSV<input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} /></label>
-          <button onClick={clearGuestList} className="bg-slate-700 text-slate-300 p-2 rounded font-bold text-[10px] hover:bg-red-900 hover:text-white transition">CLEAR</button>
+          <button onClick={() => setUnassigned([])} className="bg-slate-700 text-slate-300 p-2 rounded font-bold text-[10px] hover:bg-red-900 hover:text-white transition">CLEAR</button>
         </div>
 
-        <input type="text" placeholder="Search guests..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-slate-900 border border-slate-700 p-2 rounded text-[10px] mb-2 focus:border-indigo-500 outline-none" />
+        <input type="text" placeholder="Search guests..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-slate-900 border border-slate-700 p-2 rounded text-[10px] mb-2 outline-none focus:border-indigo-500" />
         
         <div className="flex-1 overflow-y-auto space-y-1.5 pr-2 border-t border-slate-700 pt-4 custom-scrollbar" onDragOver={e => e.preventDefault()}
              onDrop={e => {
@@ -188,8 +184,8 @@ export default function SeatingPlanner() {
 
         <div className="mt-4 pt-4 border-t border-slate-700 space-y-2">
           <input value={planName} onChange={e => setPlanName(e.target.value)} placeholder="Event Name..." className="w-full bg-slate-900 border border-slate-700 p-2 rounded text-xs text-white" />
-          <button onClick={saveToCloud} className="w-full bg-emerald-600 p-2 rounded font-bold text-xs hover:bg-emerald-400 transition shadow-md uppercase">MANUAL SAVE</button>
-          <button onClick={addTable} className="w-full bg-slate-700 p-2 rounded text-[10px] hover:bg-slate-600 transition opacity-80">+ ADD TABLE</button>
+          <button onClick={saveToCloud} className="w-full bg-emerald-600 p-2 rounded font-bold text-xs hover:bg-emerald-400 transition shadow-md uppercase">MANUAL SYNC</button>
+          <button onClick={addTable} className="w-full bg-slate-700 p-2 rounded text-[10px] hover:bg-slate-600 transition">+ ADD TABLE</button>
         </div>
       </div>
 
@@ -200,7 +196,10 @@ export default function SeatingPlanner() {
             <div className="flex flex-col"><span className="text-[9px] text-slate-400 uppercase font-black tracking-widest">Unassigned</span><span className="text-xl font-black text-indigo-400">{stats.unassigned}</span></div>
             <div className="flex flex-col"><span className="text-[9px] text-slate-400 uppercase font-black tracking-widest">Seated</span><span className="text-xl font-black text-emerald-400">{stats.seated}</span></div>
           </div>
-          <button onClick={() => toPng(canvasRef.current).then(data => { const a = document.createElement('a'); a.download = `${planName || 'plan'}.png`; a.href = data; a.click(); })} className="bg-white text-slate-900 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-tight shadow-sm hover:bg-indigo-50 transition">EXPORT PNG</button>
+          {/* Requirement: High-Res PNG Button */}
+          <button onClick={exportHighResPng} className="bg-white text-slate-900 px-6 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg hover:bg-indigo-50 hover:scale-105 transition-all">
+            Download High-Res PNG
+          </button>
         </div>
 
         <div ref={canvasRef} className="flex-1 bg-white rounded-2xl border-[6px] border-slate-800 grid grid-cols-3 grid-rows-2 gap-4 p-5 overflow-hidden relative shadow-inner">
