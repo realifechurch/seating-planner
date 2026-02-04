@@ -195,17 +195,25 @@ export default function SeatingPlanner() {
             return (
               <div key={id} draggable
                 onDragEnd={(e) => {
-                    const rect = document.getElementById('canvas-root').getBoundingClientRect();
-                    // Fixes the "jumping" bug by measuring relative to the canvas edge
-                    const x = ((e.clientX - rect.left) / rect.width) * 100;
-                    const y = ((e.clientY - rect.top) / rect.height) * 100;
-                    
-                    // Keeps tables inside the boundary
-                    const safeX = Math.max(5, Math.min(95, x));
-                    const safeY = Math.max(5, Math.min(95, y));
-                    
-                    setTablePos(prev => ({ ...prev, [id]: { x: safeX, y: safeY } }));
-                }} 
+    const canvas = document.getElementById('canvas-root');
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    
+    // Use pageX/pageY and subtract the canvas offset to handle scrolling
+    const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+
+    // Calculate x and y as percentages of the canvas container
+    const x = ((e.pageX - rect.left - scrollLeft) / rect.width) * 100;
+    const y = ((e.pageY - rect.top - scrollTop) / rect.height) * 100;
+    
+    // Boundary checks to prevent tables from getting stuck half-off screen
+    const safeX = Math.max(5, Math.min(95, x));
+    const safeY = Math.max(5, Math.min(95, y));
+    
+    setTablePos(prev => ({ ...prev, [id]: { x: safeX, y: safeY } }));
+}}
                 onDrop={e => {
                     e.stopPropagation();
                     const name = e.dataTransfer.getData("name");
