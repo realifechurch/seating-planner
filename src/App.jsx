@@ -28,11 +28,13 @@ export default function SeatingPlanner() {
   const [tables, setTables] = useState({});
   const [tablePos, setTablePos] = useState({}); 
 
+  // New State for Manual Guest Entry
+  const [newGuestName, setNewGuestName] = useState("");
+
   // Interaction State
   const [selectedTableId, setSelectedTableId] = useState(null);
   const [dragState, setDragState] = useState(null); 
   const [resizeState, setResizeState] = useState(null); 
-  const [showLoadModal, setShowLoadModal] = useState(false); // New: Modal Visibility
 
   const canvasRef = useRef(null);
 
@@ -48,7 +50,6 @@ export default function SeatingPlanner() {
   // Click Outside to Deselect Table
   useEffect(() => {
     const handleClick = (e) => {
-      // If clicking canvas background (not a table, not a button)
       if (e.target.dataset.type === 'canvas-bg') {
         setSelectedTableId(null);
       }
@@ -66,14 +67,17 @@ export default function SeatingPlanner() {
   };
 
   const loadPlan = (p) => {
-    if (!window.confirm("Load this plan? Unsaved changes will be lost.")) return;
+    // Basic unsaved changes check
+    if (unassigned.length > 0 || Object.keys(tables).length > 0) {
+       if (!window.confirm("Load this plan? Any unsaved changes on the current canvas will be lost.")) return;
+    }
+    
     setPlanName(p.name);
     setCurrentPlanId(p.id);
     setUnassigned(p.data.unassigned || []);
     setTables(p.data.tables || {});
     setTablePos(p.data.tablePos || {});
     setSelectedTableId(null);
-    setShowLoadModal(false);
   };
 
   const handleLogout = async () => {
@@ -89,7 +93,6 @@ export default function SeatingPlanner() {
   const savePlan = async (asNewVersion = false) => {
     if (!planName) return alert("Please name your plan.");
 
-    // If "Save as New", we clear the ID so Supabase creates a new row
     const idToUse = asNewVersion ? null : currentPlanId;
     const nameToUse = asNewVersion ? `${planName} (Copy)` : planName;
 
@@ -125,7 +128,7 @@ export default function SeatingPlanner() {
         height: defaultHeight
       } 
     }));
-    setSelectedTableId(nextId); // Auto-select new table
+    setSelectedTableId(nextId); 
   };
 
   const updateTableShape = (id, newShape) => {
@@ -141,7 +144,6 @@ export default function SeatingPlanner() {
   };
 
   const deleteTable = (id) => {
-    // Rescue guests
     const guestsAtTable = tables[id] || [];
     if (guestsAtTable.length > 0) setUnassigned(prev => [...prev, ...guestsAtTable]);
     
@@ -154,13 +156,10 @@ export default function SeatingPlanner() {
     setSelectedTableId(null);
   };
 
-  // --- INTERACTIONS ---
+  // --- INTERACTIONS (Dragging & Resizing) ---
   const handlePointerDown = (e, id) => {
     if (e.target.closest('.no-drag')) return; 
-    
-    // Select the table
     setSelectedTableId(id);
-
     e.preventDefault(); e.stopPropagation(); 
     if (!canvasRef.current) return;
     e.target.setPointerCapture(e.pointerId);
@@ -249,6 +248,13 @@ export default function SeatingPlanner() {
     }
   };
 
+  const handleManualAddGuest = (e) => {
+    e.preventDefault();
+    if (!newGuestName.trim()) return;
+    setUnassigned(prev => [...prev, newGuestName.trim()]);
+    setNewGuestName("");
+  };
+
   const moveGuest = (name, source, target) => {
     const targetCap = tablePos[target]?.capacity || 8;
     if (target !== 'sidebar' && (tables[target]?.length || 0) >= targetCap) return alert("Table is full!");
@@ -292,63 +298,65 @@ export default function SeatingPlanner() {
   return (
     <div className="flex h-screen w-screen bg-slate-950 text-slate-200 overflow-hidden font-sans">
       
-      {/* --- LOAD PLAN MODAL --- */}
-      {showLoadModal && (
-        <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-10">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-2xl h-[80vh] rounded-2xl p-6 flex flex-col shadow-2xl">
-            <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
-              <h2 className="text-2xl font-serif text-white">Your Saved Plans</h2>
-              <button onClick={() => setShowLoadModal(false)} className="text-slate-400 hover:text-white text-2xl">&times;</button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3">
-              {plans.length === 0 && <p className="text-center text-slate-500 italic mt-10">No plans saved yet.</p>}
-              {plans.map(p => (
-                <div key={p.id} className="flex items-center justify-between p-4 bg-slate-800 rounded-xl hover:bg-slate-700 transition border border-slate-700 group">
-                  <div onClick={() => loadPlan(p)} className="flex-1 cursor-pointer">
-                    <h3 className="font-bold text-lg text-white group-hover:text-indigo-400 transition">{p.name}</h3>
-                    <p className="text-xs text-slate-400">Modified: {new Date(p.created_at).toLocaleString()}</p>
-                    <p className="text-xs text-slate-500">{Object.keys(p.data.tables || {}).length} Tables • {(p.data.unassigned || []).length} Unassigned</p>
-                  </div>
-                  <button onClick={() => loadPlan(p)} className="bg-indigo-600 text-xs font-bold px-4 py-2 rounded-lg mr-2 hover:bg-indigo-500">OPEN</button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* --- SIDEBAR --- */}
       <div className="w-80 bg-slate-900 p-5 flex flex-col border-r border-slate-800 z-20 shadow-2xl relative">
         <h2 className="text-xs font-black text-indigo-400 uppercase tracking-widest mb-4">Guest List</h2>
         
-        {/* Guest Controls */}
+        {/* NEW: Manual Guest Add */}
+        <form onSubmit={handleManualAddGuest} className="flex gap-2 mb-2">
+            <input 
+              value={newGuestName} 
+              onChange={e => setNewGuestName(e.target.value)} 
+              placeholder="Guest Name..." 
+              className="flex-1 bg-slate-950 border border-slate-800 p-2 rounded-lg text-xs outline-none focus:border-indigo-500"
+            />
+            <button type="submit" className="bg-indigo-600 px-3 rounded-lg font-bold text-lg hover:bg-indigo-500 shadow-md">+</button>
+        </form>
+
+        {/* CSV & Clear */}
         <div className="flex gap-2 mb-4">
-          <label className="flex-1 bg-indigo-600 text-center p-3 rounded-xl cursor-pointer font-bold text-[10px] uppercase hover:bg-indigo-500 transition shadow-lg">
-            Import CSV<input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
+          <label className="flex-1 bg-slate-800 border border-slate-700 text-center p-2 rounded-lg cursor-pointer font-bold text-[9px] uppercase hover:bg-slate-700 transition text-slate-400 hover:text-white">
+            Upload CSV<input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
           </label>
-          <button onClick={() => setUnassigned([])} className="px-3 bg-slate-800 border border-slate-700 rounded-xl text-[10px] font-bold text-slate-400 hover:text-white">Clear</button>
+          <button onClick={() => setUnassigned([])} className="px-3 bg-slate-800 border border-slate-700 rounded-lg text-[9px] font-bold text-slate-400 hover:text-white uppercase">Clear</button>
         </div>
 
+        {/* Guest List Display */}
         <div className="flex-1 overflow-y-auto space-y-1.5 pr-2 custom-scrollbar bg-slate-900/50 rounded-xl mb-4">
-          {unassigned.length === 0 && <p className="text-[10px] text-slate-600 text-center mt-4">No unassigned guests</p>}
-          {unassigned.map(name => (
-            <div key={name} draggable onDragStart={() => { window.draggedGuest = name; window.draggedSource = 'sidebar'; }} className="p-3 bg-slate-800 border border-slate-700 rounded-xl text-[10px] cursor-grab hover:bg-slate-700 hover:border-indigo-500/50 transition-colors shadow-sm">{name}</div>
+          {unassigned.length === 0 && <p className="text-[10px] text-slate-600 text-center mt-4 italic">Add guests to start</p>}
+          {unassigned.map((name, i) => (
+            <div key={`${name}-${i}`} draggable onDragStart={() => { window.draggedGuest = name; window.draggedSource = 'sidebar'; }} className="p-2.5 bg-slate-800 border border-slate-700 rounded-lg text-[10px] cursor-grab hover:bg-slate-700 hover:border-indigo-500/50 transition-colors shadow-sm">{name}</div>
           ))}
         </div>
 
         {/* Plan Controls */}
         <div className="border-t border-slate-800 pt-4 space-y-3">
-           <input value={planName} onChange={e => setPlanName(e.target.value)} placeholder="Plan Name (e.g. Version 1)" className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs outline-none focus:border-indigo-500 transition-colors" />
+           {/* NEW: Plan Dropdown Selection */}
+           <div className="relative">
+             <p className="text-[9px] font-bold text-slate-500 uppercase mb-1">Load Project / Version:</p>
+             <select 
+               className="w-full bg-slate-800 border border-slate-700 p-2 rounded-lg text-[10px] outline-none focus:border-indigo-500 cursor-pointer text-slate-300"
+               onChange={(e) => {
+                 const selected = plans.find(p => p.id === e.target.value);
+                 if (selected) loadPlan(selected);
+               }}
+               value={currentPlanId || ""}
+             >
+                <option value="" disabled>-- Select a Plan --</option>
+                {plans.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({new Date(p.created_at).toLocaleDateString()})
+                  </option>
+                ))}
+             </select>
+           </div>
+
+           <input value={planName} onChange={e => setPlanName(e.target.value)} placeholder="Current Plan Name..." className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs outline-none focus:border-indigo-500 transition-colors" />
            
            <div className="grid grid-cols-2 gap-2">
              <button onClick={() => savePlan(false)} className="bg-emerald-600 p-2.5 rounded-xl font-bold text-[10px] uppercase hover:bg-emerald-500 shadow-lg text-white">Save</button>
              <button onClick={() => savePlan(true)} className="bg-slate-700 p-2.5 rounded-xl font-bold text-[10px] uppercase hover:bg-slate-600 shadow-lg text-slate-300">Save Copy</button>
            </div>
-           
-           <button onClick={() => setShowLoadModal(true)} className="w-full bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 p-2.5 rounded-xl font-bold text-[10px] uppercase hover:bg-indigo-600/30 transition">
-              📂 Manage Plans / Versions
-           </button>
            
            <button onClick={exportToPDF} className="w-full bg-slate-800 border border-slate-700 text-slate-400 p-2.5 rounded-xl font-bold text-[10px] uppercase hover:text-white transition">
               Export to PDF
@@ -365,7 +373,6 @@ export default function SeatingPlanner() {
       {/* --- STAGE --- */}
       <div className="flex-1 bg-slate-950 flex items-center justify-center p-8 overflow-hidden relative">
         
-        {/* Toolbar Hint */}
         {selectedTableId && <div className="absolute top-6 left-1/2 -translate-x-1/2 text-slate-500 text-[10px] animate-pulse">Table Selected</div>}
 
         <div 
@@ -408,7 +415,6 @@ export default function SeatingPlanner() {
                     ${isSelected ? 'border-indigo-500 ring-4 ring-indigo-500/20' : (isFull ? 'border-red-500' : 'border-slate-300')}
                     ${isFull ? 'bg-red-50' : 'bg-white shadow-md hover:border-indigo-400'}`}
                 >
-                  {/* Resize Handle */}
                   {isSelected && (
                     <div className="no-drag absolute bottom-0 right-0 w-6 h-6 cursor-se-resize flex items-center justify-center z-50"
                         onPointerDown={(e) => handleResizePointerDown(e, id)}>
@@ -422,15 +428,10 @@ export default function SeatingPlanner() {
                   </div>
                 </div>
 
-                {/* --- FLOATING CONTEXT TOOLBAR (Replaces Context Menu) --- */}
                 {isSelected && (
                   <div 
                     className="absolute z-[100] bg-slate-800 text-white p-1.5 rounded-full shadow-2xl flex items-center gap-2 border border-slate-600 no-drag"
-                    style={{ 
-                      left: `${config.x}%`, 
-                      top: `${config.y}%`,
-                      transform: 'translate(-50%, -160%)' // Floats above table
-                    }}
+                    style={{ left: `${config.x}%`, top: `${config.y}%`, transform: 'translate(-50%, -160%)' }}
                     onPointerDown={(e) => e.stopPropagation()}
                   >
                      <div className="flex bg-slate-900 rounded-full p-1 border border-slate-700">
@@ -453,7 +454,7 @@ export default function SeatingPlanner() {
           })}
         </div>
 
-        {/* --- ADD TABLE CONTROLS (Floating at Bottom) --- */}
+        {/* ADD TABLE CONTROLS */}
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur border border-slate-700 p-2 rounded-2xl flex gap-3 shadow-2xl z-40">
            <button onClick={() => addTable('circle')} className="flex flex-col items-center gap-1 p-2 hover:bg-indigo-600 rounded-xl group transition">
              <div className="w-8 h-8 rounded-full border-2 border-slate-400 group-hover:border-white group-hover:bg-white/20"></div>
