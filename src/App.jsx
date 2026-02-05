@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Papa from 'papaparse';
 
@@ -17,10 +17,7 @@ export default function SeatingPlanner() {
   const [unassigned, setUnassigned] = useState([]);
   const [tables, setTables] = useState({});
   const [tablePos, setTablePos] = useState({}); 
-  const [searchTerm, setSearchTerm] = useState("");
   const [editingTable, setEditingTable] = useState(null);
-
-  // Drag State for Pointer Events
   const [dragState, setDragState] = useState(null); 
 
   const canvasRef = useRef(null);
@@ -67,16 +64,18 @@ export default function SeatingPlanner() {
   const addTable = () => {
     const nextId = Object.keys(tables).length + 1;
     setTables(prev => ({ ...prev, [nextId]: [] }));
-    // Default to 'circle'
     setTablePos(prev => ({ ...prev, [nextId]: { x: 50, y: 50, shape: 'circle', capacity: 8 } }));
   };
 
-  // NEW: Update Table Shape (Circle, Square, Rect)
+  // FIX: Update Table Shape
   const updateTableShape = (id, newShape) => {
-    setTablePos(prev => ({ ...prev, [id]: { ...prev[id], shape: newShape } }));
+    setTablePos(prev => ({
+      ...prev,
+      [id]: { ...prev[id], shape: newShape }
+    }));
   };
 
-  // NEW: Delete Table & Rescue Guests
+  // FIX: Delete Table
   const deleteTable = (id) => {
     if (!window.confirm(`Are you sure you want to delete Table ${id}?`)) return;
 
@@ -86,11 +85,12 @@ export default function SeatingPlanner() {
       setUnassigned(prev => [...prev, ...guestsAtTable]);
     }
 
-    // 2. Remove table data
+    // 2. Delete from tables state
     const newTables = { ...tables };
     delete newTables[id];
     setTables(newTables);
 
+    // 3. Delete from position state
     const newTablePos = { ...tablePos };
     delete newTablePos[id];
     setTablePos(newTablePos);
@@ -98,8 +98,11 @@ export default function SeatingPlanner() {
     setEditingTable(null);
   };
 
-  // --- PRECISION POINTER DRAG ---
+  // --- POINTER DRAG LOGIC ---
   const handlePointerDown = (e, id) => {
+    // Check if we clicked the settings button or menu
+    if (e.target.closest('.no-drag')) return;
+
     e.preventDefault(); 
     e.stopPropagation(); 
 
@@ -132,6 +135,7 @@ export default function SeatingPlanner() {
     let newX = mouseXPercent - dragState.offsetX;
     let newY = mouseYPercent - dragState.offsetY;
 
+    // Clamp
     newX = Math.max(0, Math.min(100, newX));
     newY = Math.max(0, Math.min(100, newY));
 
@@ -222,10 +226,8 @@ export default function SeatingPlanner() {
           onDrop={() => { if (window.draggedGuest) moveGuest(window.draggedGuest, window.draggedSource, 'sidebar'); }}
         >
           {Object.entries(tablePos).map(([id, config]) => {
-            // SHAPE LOGIC
             const isRect = config.shape === 'rect';
             const isSquare = config.shape === 'square';
-            // Default to 'circle' if not rect or square
             const isCircle = !isRect && !isSquare; 
             
             const seated = tables[id] || [];
@@ -246,9 +248,7 @@ export default function SeatingPlanner() {
                   left: `${config.x}%`, 
                   top: `${config.y}%`, 
                   transform: 'translate(-50%, -50%)', 
-                  // WIDTH: Rect grows, Circle/Square stay fixed relative to canvas
                   width: isRect ? `${10 + (config.capacity)}%` : '14%', 
-                  // HEIGHT: Rect fixed height, Circle/Square use aspect-ratio
                   height: isRect ? '12%' : 'auto', 
                   aspectRatio: isRect ? 'auto' : '1 / 1',
                   cursor: isDragging ? 'grabbing' : 'grab',
@@ -258,29 +258,37 @@ export default function SeatingPlanner() {
                   ${isCircle ? 'rounded-full' : 'rounded-lg'} 
                   ${seated.length >= config.capacity ? 'border-rose-400 bg-rose-50' : 'bg-white border-slate-300 shadow-md hover:border-indigo-400'}`}
               >
-                {/* GEAR BUTTON */}
-                <button onPointerDown={(e) => e.stopPropagation()} onClick={() => setEditingTable(editingTable === id ? null : id)} className="absolute -top-3 -right-3 bg-slate-800 text-white p-1.5 rounded-full opacity-0 hover:opacity-100 transition-opacity z-50">⚙️</button>
+                {/* GEAR BUTTON (Added 'no-drag' class and stopPropagation) */}
+                <button 
+                    onPointerDown={(e) => e.stopPropagation()} 
+                    onClick={(e) => { e.stopPropagation(); setEditingTable(editingTable === id ? null : id); }} 
+                    className="no-drag absolute -top-3 -right-3 bg-slate-800 text-white p-1.5 rounded-full opacity-0 hover:opacity-100 transition-opacity z-50 cursor-pointer"
+                >⚙️</button>
                 
-                {/* SETTINGS MENU */}
+                {/* SETTINGS MENU (Added 'no-drag' class and full isolation) */}
                 {editingTable === id && (
-                  <div onPointerDown={(e) => e.stopPropagation()} className="absolute -top-24 left-1/2 -translate-x-1/2 bg-slate-800 p-2 rounded-xl flex flex-col gap-2 shadow-2xl z-[60] border border-slate-700 w-max">
-                    
+                  <div 
+                    className="no-drag absolute -top-24 left-1/2 -translate-x-1/2 bg-slate-800 p-3 rounded-xl flex flex-col gap-2 shadow-2xl z-[100] border border-slate-700 w-max cursor-default"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {/* Shape Selectors */}
                     <div className="flex gap-1 justify-center">
-                        <button onClick={() => updateTableShape(id, 'circle')} className={`text-[8px] px-2 py-1 rounded ${isCircle ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>Circle</button>
-                        <button onClick={() => updateTableShape(id, 'square')} className={`text-[8px] px-2 py-1 rounded ${isSquare ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>Square</button>
-                        <button onClick={() => updateTableShape(id, 'rect')} className={`text-[8px] px-2 py-1 rounded ${isRect ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>Rect</button>
+                        <button onClick={() => updateTableShape(id, 'circle')} className={`text-[9px] px-2 py-1 rounded font-bold ${isCircle ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>Circle</button>
+                        <button onClick={() => updateTableShape(id, 'square')} className={`text-[9px] px-2 py-1 rounded font-bold ${isSquare ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>Square</button>
+                        <button onClick={() => updateTableShape(id, 'rect')} className={`text-[9px] px-2 py-1 rounded font-bold ${isRect ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>Rect</button>
                     </div>
 
                     {/* Capacity Controls */}
-                    <div className="flex items-center justify-center gap-2 bg-slate-900 px-2 rounded-md border border-slate-700">
-                      <button onClick={() => setTablePos(prev => ({...prev, [id]: {...prev[id], capacity: Math.max(2, config.capacity - 2)}}))} className="text-white font-bold">-</button>
-                      <span className="text-[10px] text-white font-mono min-w-[12px] text-center">{config.capacity}</span>
-                      <button onClick={() => setTablePos(prev => ({...prev, [id]: {...prev[id], capacity: Math.min(12, config.capacity + 2)}}))} className="text-white font-bold">+</button>
+                    <div className="flex items-center justify-center gap-2 bg-slate-900 px-2 py-1 rounded-md border border-slate-700">
+                      <button onClick={() => setTablePos(prev => ({...prev, [id]: {...prev[id], capacity: Math.max(2, config.capacity - 2)}}))} className="text-white font-bold px-2 hover:text-indigo-400">-</button>
+                      <span className="text-[10px] text-white font-mono min-w-[16px] text-center">{config.capacity}</span>
+                      <button onClick={() => setTablePos(prev => ({...prev, [id]: {...prev[id], capacity: Math.min(12, config.capacity + 2)}}))} className="text-white font-bold px-2 hover:text-indigo-400">+</button>
                     </div>
 
                     {/* Delete Button */}
-                    <button onClick={() => deleteTable(id)} className="text-[8px] bg-red-900/50 text-red-200 border border-red-900 py-1 rounded hover:bg-red-900 hover:text-white transition-colors">Delete Table</button>
+                    <button onClick={() => deleteTable(id)} className="w-full text-[9px] bg-red-900/50 text-red-200 border border-red-900/50 py-1.5 rounded hover:bg-red-600 hover:text-white transition-colors font-bold uppercase tracking-wide">Delete Table</button>
                   </div>
                 )}
 
