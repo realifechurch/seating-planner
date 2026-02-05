@@ -40,6 +40,7 @@ export default function SeatingPlanner() {
 
   useEffect(() => { if (session?.user?.id) fetchPlans(); }, [session]);
 
+  // Click background to deselect
   useEffect(() => {
     const handleClick = (e) => {
       if (e.target.dataset.type === 'canvas-bg') setSelectedTableId(null);
@@ -62,6 +63,8 @@ export default function SeatingPlanner() {
     }
     setPlanName(p.name);
     setCurrentPlanId(p.id);
+    
+    // Legacy migration: String[] -> Object[]
     let guests = p.data.unassigned || [];
     if (guests.length > 0 && typeof guests[0] === 'string') {
         guests = guests.map(name => ({ id: crypto.randomUUID(), name, group: 'None' }));
@@ -121,27 +124,23 @@ export default function SeatingPlanner() {
 
   // --- AUTO ASSIGN LOGIC ---
   const autoAssignGroup = (groupName, startTableId) => {
-    if (Object.keys(tables).length === 0) return alert("No tables available! Create tables first.");
+    // Filter out decor items (capacity 0)
+    const validTableIds = Object.keys(tables).filter(id => (tablePos[id]?.capacity || 0) > 0);
+    
+    if (validTableIds.length === 0) return alert("No tables available! Create tables first.");
 
-    // 1. Get all guests in this group
     const guestsToAssign = unassigned.filter(g => g.group === groupName);
     if (guestsToAssign.length === 0) return alert("No unassigned guests in that group.");
 
-    // 2. Sort Table IDs numerically [1, 2, 3...]
-    const sortedTableIds = Object.keys(tables).map(Number).sort((a,b) => a - b);
-    
-    // 3. Find index of start table
+    const sortedTableIds = validTableIds.map(Number).sort((a,b) => a - b);
     let currentTableIndex = sortedTableIds.indexOf(Number(startTableId));
     if (currentTableIndex === -1) return alert("Start table not found.");
 
-    // Copy State
     const newTables = { ...tables };
     const guestIdsAssigned = new Set();
     let guestsRemaining = [...guestsToAssign];
 
-    // 4. Waterfall Loop
     while (guestsRemaining.length > 0) {
-        // If we ran out of tables
         if (currentTableIndex >= sortedTableIds.length) {
             alert(`Ran out of tables! ${guestsRemaining.length} guests from '${groupName}' could not be seated.`);
             break;
@@ -153,40 +152,71 @@ export default function SeatingPlanner() {
         const spaceAvailable = capacity - currentSeated.length;
 
         if (spaceAvailable > 0) {
-            // Take slice of guests that fit
             const moving = guestsRemaining.slice(0, spaceAvailable);
-            
-            // Add names to table
             newTables[currentTableId] = [...currentSeated, ...moving.map(g => g.name)];
-            
-            // Mark IDs for removal from sidebar
             moving.forEach(g => guestIdsAssigned.add(g.id));
-            
-            // Remove from remaining queue
             guestsRemaining = guestsRemaining.slice(spaceAvailable);
         }
-
-        // Move to next table
         currentTableIndex++;
     }
 
-    // 5. Update State
     setTables(newTables);
     setUnassigned(prev => prev.filter(g => !guestIdsAssigned.has(g.id)));
   };
 
-  // --- TABLE LOGIC ---
+  // --- ADD ITEM LOGIC (Tables & Decor) ---
   const addTable = (shapeType) => {
     const nextId = Object.keys(tables).length + 1;
     setTables(prev => ({ ...prev, [nextId]: [] }));
+    
     const defaultWidth = shapeType === 'rect' ? 15 : 10; 
     const defaultHeight = shapeType === 'rect' ? 15 : null; 
-    setTablePos(prev => ({ ...prev, [nextId]: { x: 50, y: 50, shape: shapeType, capacity: 8, width: defaultWidth, height: defaultHeight } }));
+    
+    setTablePos(prev => ({ 
+      ...prev, 
+      [nextId]: { 
+        x: 50, y: 50, 
+        type: 'table', // Explicitly mark as table
+        shape: shapeType, 
+        capacity: 8, 
+        width: defaultWidth, 
+        height: defaultHeight 
+      } 
+    }));
     setSelectedTableId(nextId); 
   };
 
+  const addDecor = (type) => {
+    const nextId = Object.keys(tables).length + 1;
+    setTables(prev => ({ ...prev, [nextId]: [] })); // Create entry but it will stay empty
+    
+    // Default Sizes for Decor
+    let w = 15, h = 15, shape = 'rect';
+    if (type === 'dancefloor') { w = 30; h = 25; }
+    if (type === 'bar') { w = 20; h = 10; }
+    if (type === 'plant') { w = 5; h = null; shape = 'circle'; }
+    if (type === 'dj') { w = 10; h = null; shape = 'square'; }
+
+    setTablePos(prev => ({ 
+      ...prev, 
+      [nextId]: { 
+        x: 50, y: 50, 
+        type: type, // Mark as decor
+        shape: shape,
+        capacity: 0, // No guests allowed
+        width: w, 
+        height: h 
+      } 
+    }));
+    setSelectedTableId(nextId);
+  };
+
   const updateTableShape = (id, newShape) => setTablePos(prev => ({ ...prev, [id]: { ...prev[id], shape: newShape } }));
+  
   const updateTableCapacity = (id, delta) => setTablePos(prev => {
+      // Don't allow capacity change for decor
+      if (prev[id].type !== 'table' && prev[id].type !== undefined) return prev;
+      
       const current = prev[id].capacity || 8;
       const newCap = Math.max(2, Math.min(20, current + delta));
       return { ...prev, [id]: { ...prev[id], capacity: newCap } };
@@ -204,6 +234,9 @@ export default function SeatingPlanner() {
   };
 
   const moveGuest = (guestObjOrName, source, target) => {
+    // Reject drops on decor
+    if (tablePos[target]?.capacity === 0) return;
+
     const guestName = typeof guestObjOrName === 'string' ? guestObjOrName : guestObjOrName.name;
     const guestGroup = typeof guestObjOrName === 'object' ? guestObjOrName.group : 'None';
     const targetCap = tablePos[target]?.capacity || 8;
@@ -261,9 +294,13 @@ export default function SeatingPlanner() {
         let newWidth = resizeState.startW + (deltaX * 2);
         const config = tablePos[resizeState.id];
         const isRect = config.shape === 'rect';
+        
+        // Use aspect ratio lock for circle/square
         let newHeight = isRect ? (resizeState.startH + (deltaY * 2)) : null;
-        newWidth = Math.max(5, Math.min(50, newWidth));
-        if (isRect) newHeight = Math.max(5, Math.min(50, newHeight));
+        
+        newWidth = Math.max(3, Math.min(80, newWidth)); // Allowed wider range for dancefloors
+        if (isRect) newHeight = Math.max(3, Math.min(80, newHeight));
+        
         setTablePos(prev => ({ ...prev, [resizeState.id]: { ...prev[resizeState.id], width: newWidth, height: newHeight } }));
     } else if (dragState) {
         e.preventDefault();
@@ -291,7 +328,8 @@ export default function SeatingPlanner() {
         planName={planName} setPlanName={setPlanName}
         savePlan={savePlan} exportToPDF={exportToPDF} handleLogout={handleLogout}
         userEmail={session.user.email} handleFileUpload={handleFileUpload}
-        tables={tables} autoAssignGroup={autoAssignGroup} // Passed new Props
+        tables={tables} autoAssignGroup={autoAssignGroup}
+        addDecor={addDecor} // Pass down the new function
       />
       <Stage 
         canvasRef={canvasRef}

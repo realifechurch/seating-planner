@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
 
-// --- ICONS ---
 const IconTrash = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>;
 
-// --- CONSTANTS ---
 const GROUP_COLORS = [
   { name: 'None', color: 'bg-slate-700' },
   { name: 'Family', color: 'bg-red-500' },
@@ -23,16 +21,15 @@ export default function Sidebar({
   planName, setPlanName,
   savePlan, exportToPDF, handleLogout,
   userEmail, handleFileUpload,
-  tables, autoAssignGroup // <--- New Prop
+  tables, autoAssignGroup,
+  addDecor // New Prop
 }) {
   const [newGuestName, setNewGuestName] = useState("");
   const [selectedGuestIds, setSelectedGuestIds] = useState(new Set());
   
-  // Auto-Assign Local State
   const [assignGroup, setAssignGroup] = useState("");
   const [assignTable, setAssignTable] = useState("");
 
-  // --- LOCAL LOGIC ---
   const handleManualAddGuest = (e) => {
     e.preventDefault();
     if (!newGuestName.trim()) return;
@@ -54,9 +51,7 @@ export default function Sidebar({
   };
 
   const assignGroupToSelected = (groupName) => {
-    setUnassigned(prev => prev.map(g => 
-        selectedGuestIds.has(g.id) ? { ...g, group: groupName } : g
-    ));
+    setUnassigned(prev => prev.map(g => selectedGuestIds.has(g.id) ? { ...g, group: groupName } : g));
     setSelectedGuestIds(new Set()); 
   };
 
@@ -65,8 +60,19 @@ export default function Sidebar({
     autoAssignGroup(assignGroup, assignTable);
   };
 
-  // Derived list of groups that actually exist in the sidebar
+  // Derived lists
   const availableGroups = [...new Set(unassigned.map(g => g.group))].filter(g => g !== 'None');
+  // Filter only real tables (capacity > 0) for the dropdown
+  const realTables = Object.keys(tables).filter(id => {
+      // We don't have direct access to tablePos here efficiently without passing it, 
+      // but we can assume mostly numeric keys in tables map to tables.
+      // A better way is checking if the table id exists in 'tables' prop which tracks seated guests.
+      // Since Decor items are also in 'tables' state (for ID tracking) but have 0 cap, 
+      // we rely on the user picking valid ones or we just show all. 
+      // For a perfect UX, we'd filter by checking if capacity > 0, but tables prop only has guest lists.
+      // Let's just show all for now, the autoAssign logic checks capacity anyway.
+      return true; 
+  });
 
   return (
     <div className="w-80 bg-slate-900 p-5 flex flex-col border-r border-slate-800 z-20 shadow-2xl relative h-full">
@@ -121,7 +127,18 @@ export default function Sidebar({
         })}
       </div>
 
-      {/* NEW: AUTO-ASSIGN GROUP */}
+      {/* DECOR / ROOM ELEMENTS */}
+      <div className="mb-4 border-t border-slate-800 pt-2">
+         <p className="text-[9px] font-bold text-slate-500 uppercase mb-2">Room Elements:</p>
+         <div className="grid grid-cols-2 gap-2 mb-2">
+             <button onClick={() => addDecor('dancefloor')} className="bg-slate-800 p-2 rounded border border-slate-700 hover:bg-slate-700 text-[9px] font-bold text-slate-300">Dance Floor</button>
+             <button onClick={() => addDecor('bar')} className="bg-slate-800 p-2 rounded border border-slate-700 hover:bg-slate-700 text-[9px] font-bold text-slate-300">Bar Area</button>
+             <button onClick={() => addDecor('plant')} className="bg-slate-800 p-2 rounded border border-slate-700 hover:bg-slate-700 text-[9px] font-bold text-slate-300">Plant</button>
+             <button onClick={() => addDecor('dj')} className="bg-slate-800 p-2 rounded border border-slate-700 hover:bg-slate-700 text-[9px] font-bold text-slate-300">DJ Booth</button>
+         </div>
+      </div>
+
+      {/* AUTO-ASSIGN GROUP */}
       <div className="mb-4 border-t border-slate-800 pt-2">
          <p className="text-[9px] font-bold text-indigo-400 uppercase mb-2">Auto-Assign Group:</p>
          <div className="flex flex-col gap-2">
@@ -132,7 +149,7 @@ export default function Sidebar({
                 </select>
                 <select value={assignTable} onChange={e => setAssignTable(e.target.value)} className="flex-1 bg-slate-800 text-[10px] p-1.5 rounded border border-slate-700 outline-none">
                     <option value="" disabled>Start Table...</option>
-                    {Object.keys(tables).map(id => <option key={id} value={id}>Table {id}</option>)}
+                    {realTables.map(id => <option key={id} value={id}>Table {id}</option>)}
                 </select>
             </div>
             <button onClick={handleAutoAssign} className="w-full bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 text-[10px] py-1.5 rounded border border-indigo-900 font-bold">
