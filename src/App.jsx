@@ -40,7 +40,6 @@ export default function SeatingPlanner() {
 
   useEffect(() => { if (session?.user?.id) fetchPlans(); }, [session]);
 
-  // Click background to deselect
   useEffect(() => {
     const handleClick = (e) => {
       if (e.target.dataset.type === 'canvas-bg') setSelectedTableId(null);
@@ -63,8 +62,6 @@ export default function SeatingPlanner() {
     }
     setPlanName(p.name);
     setCurrentPlanId(p.id);
-    
-    // Legacy migration: String[] -> Object[]
     let guests = p.data.unassigned || [];
     if (guests.length > 0 && typeof guests[0] === 'string') {
         guests = guests.map(name => ({ id: crypto.randomUUID(), name, group: 'None' }));
@@ -117,9 +114,65 @@ export default function SeatingPlanner() {
             const name = row.Name || Object.values(row)[0];
             return name ? { id: crypto.randomUUID(), name, group: 'None' } : null;
           }).filter(Boolean);
-          setUnassigned(prev => [...prev, ...imported]);
+          setUnassigned(prev => [...new Set([...prev, ...imported])]);
       }});
     }
+  };
+
+  // --- AUTO ASSIGN LOGIC ---
+  const autoAssignGroup = (groupName, startTableId) => {
+    if (Object.keys(tables).length === 0) return alert("No tables available! Create tables first.");
+
+    // 1. Get all guests in this group
+    const guestsToAssign = unassigned.filter(g => g.group === groupName);
+    if (guestsToAssign.length === 0) return alert("No unassigned guests in that group.");
+
+    // 2. Sort Table IDs numerically [1, 2, 3...]
+    const sortedTableIds = Object.keys(tables).map(Number).sort((a,b) => a - b);
+    
+    // 3. Find index of start table
+    let currentTableIndex = sortedTableIds.indexOf(Number(startTableId));
+    if (currentTableIndex === -1) return alert("Start table not found.");
+
+    // Copy State
+    const newTables = { ...tables };
+    const guestIdsAssigned = new Set();
+    let guestsRemaining = [...guestsToAssign];
+
+    // 4. Waterfall Loop
+    while (guestsRemaining.length > 0) {
+        // If we ran out of tables
+        if (currentTableIndex >= sortedTableIds.length) {
+            alert(`Ran out of tables! ${guestsRemaining.length} guests from '${groupName}' could not be seated.`);
+            break;
+        }
+
+        const currentTableId = sortedTableIds[currentTableIndex];
+        const capacity = tablePos[currentTableId]?.capacity || 8;
+        const currentSeated = newTables[currentTableId] || [];
+        const spaceAvailable = capacity - currentSeated.length;
+
+        if (spaceAvailable > 0) {
+            // Take slice of guests that fit
+            const moving = guestsRemaining.slice(0, spaceAvailable);
+            
+            // Add names to table
+            newTables[currentTableId] = [...currentSeated, ...moving.map(g => g.name)];
+            
+            // Mark IDs for removal from sidebar
+            moving.forEach(g => guestIdsAssigned.add(g.id));
+            
+            // Remove from remaining queue
+            guestsRemaining = guestsRemaining.slice(spaceAvailable);
+        }
+
+        // Move to next table
+        currentTableIndex++;
+    }
+
+    // 5. Update State
+    setTables(newTables);
+    setUnassigned(prev => prev.filter(g => !guestIdsAssigned.has(g.id)));
   };
 
   // --- TABLE LOGIC ---
@@ -238,6 +291,7 @@ export default function SeatingPlanner() {
         planName={planName} setPlanName={setPlanName}
         savePlan={savePlan} exportToPDF={exportToPDF} handleLogout={handleLogout}
         userEmail={session.user.email} handleFileUpload={handleFileUpload}
+        tables={tables} autoAssignGroup={autoAssignGroup} // Passed new Props
       />
       <Stage 
         canvasRef={canvasRef}
