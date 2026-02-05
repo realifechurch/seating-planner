@@ -4,30 +4,39 @@ import Papa from 'papaparse';
 import { toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 
+// --- ICONS (SVG) ---
+const IconCircle = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/></svg>;
+const IconSquare = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>;
+const IconRect = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" ry="2"/></svg>;
+const IconTrash = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>;
+
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL, 
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
 export default function SeatingPlanner() {
+  // --- STATE ---
   const [session, setSession] = useState(null);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPass, setAuthPass] = useState('');
+  
   const [plans, setPlans] = useState([]);
   const [currentPlanId, setCurrentPlanId] = useState(null);
   const [planName, setPlanName] = useState("");
   const [unassigned, setUnassigned] = useState([]);
   const [tables, setTables] = useState({});
   const [tablePos, setTablePos] = useState({}); 
-  
-  // Interaction States
+
+  // Interaction State
+  const [selectedTableId, setSelectedTableId] = useState(null);
   const [dragState, setDragState] = useState(null); 
   const [resizeState, setResizeState] = useState(null); 
-  const [contextMenu, setContextMenu] = useState(null); 
+  const [showLoadModal, setShowLoadModal] = useState(false); // New: Modal Visibility
 
   const canvasRef = useRef(null);
 
-  // --- AUTH & DATA ---
+  // --- INITIALIZATION ---
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session));
@@ -36,12 +45,19 @@ export default function SeatingPlanner() {
 
   useEffect(() => { if (session?.user?.id) fetchPlans(); }, [session]);
 
+  // Click Outside to Deselect Table
   useEffect(() => {
-    const handleClick = () => setContextMenu(null);
-    window.addEventListener('click', handleClick);
-    return () => window.removeEventListener('click', handleClick);
+    const handleClick = (e) => {
+      // If clicking canvas background (not a table, not a button)
+      if (e.target.dataset.type === 'canvas-bg') {
+        setSelectedTableId(null);
+      }
+    };
+    window.addEventListener('pointerdown', handleClick);
+    return () => window.removeEventListener('pointerdown', handleClick);
   }, []);
 
+  // --- DATA OPERATIONS ---
   const fetchPlans = async () => {
     try {
       const { data } = await supabase.from('seating_plans').select('*').eq('user_id', session.user.id).order('created_at', { ascending: false });
@@ -50,63 +66,49 @@ export default function SeatingPlanner() {
   };
 
   const loadPlan = (p) => {
+    if (!window.confirm("Load this plan? Unsaved changes will be lost.")) return;
     setPlanName(p.name);
     setCurrentPlanId(p.id);
     setUnassigned(p.data.unassigned || []);
     setTables(p.data.tables || {});
     setTablePos(p.data.tablePos || {});
-    setContextMenu(null);
+    setSelectedTableId(null);
+    setShowLoadModal(false);
   };
 
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      Papa.parse(file, {
-        header: true, skipEmptyLines: true,
-        complete: (results) => {
-          const imported = results.data.map(row => row.Name || Object.values(row)[0]).filter(Boolean);
-          setUnassigned(prev => [...new Set([...prev, ...imported])]);
-        }
-      });
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+    setTables({});
+    setTablePos({});
+    setUnassigned([]);
+    setPlanName("");
+  };
+
+  // --- SAVE & VERSIONING ---
+  const savePlan = async (asNewVersion = false) => {
+    if (!planName) return alert("Please name your plan.");
+
+    // If "Save as New", we clear the ID so Supabase creates a new row
+    const idToUse = asNewVersion ? null : currentPlanId;
+    const nameToUse = asNewVersion ? `${planName} (Copy)` : planName;
+
+    const { data, error } = await supabase.from('seating_plans').upsert({ 
+      id: idToUse, 
+      name: nameToUse, 
+      data: { unassigned, tables, tablePos }, 
+      user_id: session.user.id 
+    }).select();
+
+    if (!error) { 
+      setCurrentPlanId(data[0].id); 
+      if (asNewVersion) setPlanName(nameToUse);
+      fetchPlans(); 
+      alert(asNewVersion ? "Version saved!" : "Plan saved!"); 
     }
   };
 
-  // --- EXPORT FUNCTION ---
-  const exportToPDF = async () => {
-    if (!canvasRef.current) return;
-
-    try {
-      // 1. Capture the canvas as a high-quality PNG
-      const dataUrl = await toPng(canvasRef.current, { cacheBust: true, pixelRatio: 3 });
-      
-      // 2. Initialize PDF (Landscape A4)
-      const pdf = new jsPDF('l', 'mm', 'a4');
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-
-      // 3. Add Header Text
-      pdf.setFontSize(18);
-      pdf.text(planName || "Wedding Seating Plan", 10, 15);
-      pdf.setFontSize(10);
-      pdf.text(`Generated: ${new Date().toLocaleDateString()}`, 10, 22);
-
-      // 4. Calculate Ratio to fit image on page
-      const imgProps = pdf.getImageProperties(dataUrl);
-      const pdfWidth = pageWidth - 20; // 10mm margin each side
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-
-      // 5. Add Image to PDF
-      pdf.addImage(dataUrl, 'PNG', 10, 30, pdfWidth, pdfHeight);
-      
-      // 6. Save
-      pdf.save(`${planName || 'Seating_Plan'}.pdf`);
-    } catch (err) {
-      console.error("Export failed:", err);
-      alert("Could not generate PDF.");
-    }
-  };
-
-  // --- ACTIONS ---
+  // --- TABLE LOGIC ---
   const addTable = (shapeType) => {
     const nextId = Object.keys(tables).length + 1;
     setTables(prev => ({ ...prev, [nextId]: [] }));
@@ -123,6 +125,7 @@ export default function SeatingPlanner() {
         height: defaultHeight
       } 
     }));
+    setSelectedTableId(nextId); // Auto-select new table
   };
 
   const updateTableShape = (id, newShape) => {
@@ -138,7 +141,7 @@ export default function SeatingPlanner() {
   };
 
   const deleteTable = (id) => {
-    if (!window.confirm(`Delete Table ${id}? Guests will be moved to unassigned.`)) return;
+    // Rescue guests
     const guestsAtTable = tables[id] || [];
     if (guestsAtTable.length > 0) setUnassigned(prev => [...prev, ...guestsAtTable]);
     
@@ -148,18 +151,16 @@ export default function SeatingPlanner() {
     const newTablePos = { ...tablePos };
     delete newTablePos[id];
     setTablePos(newTablePos);
+    setSelectedTableId(null);
   };
 
-  // --- POINTER LOGIC (Unchanged from prev version) ---
-  const handleContextMenu = (e, id) => {
-    e.preventDefault(); 
-    e.stopPropagation();
-    setContextMenu({ x: e.clientX, y: e.clientY, tableId: id });
-  };
-
+  // --- INTERACTIONS ---
   const handlePointerDown = (e, id) => {
     if (e.target.closest('.no-drag')) return; 
-    if (contextMenu) { setContextMenu(null); return; }
+    
+    // Select the table
+    setSelectedTableId(id);
+
     e.preventDefault(); e.stopPropagation(); 
     if (!canvasRef.current) return;
     e.target.setPointerCapture(e.pointerId);
@@ -234,6 +235,20 @@ export default function SeatingPlanner() {
     if (resizeState) { e.target.releasePointerCapture(e.pointerId); setResizeState(null); }
   };
 
+  // --- GUEST LOGIC ---
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      Papa.parse(file, {
+        header: true, skipEmptyLines: true,
+        complete: (results) => {
+          const imported = results.data.map(row => row.Name || Object.values(row)[0]).filter(Boolean);
+          setUnassigned(prev => [...new Set([...prev, ...imported])]);
+        }
+      });
+    }
+  };
+
   const moveGuest = (name, source, target) => {
     const targetCap = tablePos[target]?.capacity || 8;
     if (target !== 'sidebar' && (tables[target]?.length || 0) >= targetCap) return alert("Table is full!");
@@ -243,18 +258,32 @@ export default function SeatingPlanner() {
     else setTables(prev => ({ ...prev, [target]: [...(prev[target] || []), name] }));
   };
 
-  const saveToDashboard = async () => {
-    if (!planName) return alert("Name your plan first.");
-    const { data, error } = await supabase.from('seating_plans').upsert({ id: currentPlanId, name: planName, data: { unassigned, tables, tablePos }, user_id: session.user.id }).select();
-    if (!error) { setCurrentPlanId(data[0].id); fetchPlans(); alert("Saved!"); }
+  const exportToPDF = async () => {
+    if (!canvasRef.current) return;
+    try {
+      const dataUrl = await toPng(canvasRef.current, { cacheBust: true, pixelRatio: 3 });
+      const pdf = new jsPDF('l', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const imgProps = pdf.getImageProperties(dataUrl);
+      const pdfWidth = pageWidth - 20; 
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      pdf.setFontSize(18);
+      pdf.text(planName || "Wedding Seating Plan", 10, 15);
+      pdf.setFontSize(10);
+      pdf.text(`Generated: ${new Date().toLocaleDateString()}`, 10, 22);
+      pdf.addImage(dataUrl, 'PNG', 10, 30, pdfWidth, pdfHeight);
+      pdf.save(`${planName || 'Seating_Plan'}.pdf`);
+    } catch (err) { alert("Could not generate PDF."); }
   };
 
-  if (!session) return ( /* LOGIN UI */ 
+  // --- RENDER ---
+  if (!session) return ( 
     <div className="h-screen w-screen bg-slate-900 flex items-center justify-center text-white p-4">
-      <form onSubmit={async (e) => { e.preventDefault(); await supabase.auth.signInWithPassword({ email, password }); }} className="bg-white/5 p-10 rounded-3xl border border-white/10 w-full max-w-md shadow-2xl">
+      <form onSubmit={async (e) => { e.preventDefault(); await supabase.auth.signInWithPassword({ email: authEmail, password: authPass }); }} className="bg-white/5 p-10 rounded-3xl border border-white/10 w-full max-w-md shadow-2xl">
         <h1 className="text-3xl font-serif mb-6 text-center italic">Wedding Dashboard</h1>
-        <input type="email" placeholder="Email" className="w-full bg-slate-800 border border-slate-700 p-4 rounded-xl mb-4 outline-none" value={email} onChange={e => setEmail(e.target.value)} />
-        <input type="password" placeholder="Password" className="w-full bg-slate-800 border border-slate-700 p-4 rounded-xl mb-6 outline-none" value={password} onChange={e => setPassword(e.target.value)} />
+        <input type="email" placeholder="Email" className="w-full bg-slate-800 border border-slate-700 p-4 rounded-xl mb-4 outline-none" value={authEmail} onChange={e => setAuthEmail(e.target.value)} />
+        <input type="password" placeholder="Password" className="w-full bg-slate-800 border border-slate-700 p-4 rounded-xl mb-6 outline-none" value={authPass} onChange={e => setAuthPass(e.target.value)} />
         <button type="submit" className="w-full bg-indigo-600 py-4 rounded-xl font-bold uppercase tracking-widest shadow-lg">Sign In</button>
       </form>
     </div>
@@ -262,59 +291,86 @@ export default function SeatingPlanner() {
 
   return (
     <div className="flex h-screen w-screen bg-slate-950 text-slate-200 overflow-hidden font-sans">
-      {/* SIDEBAR */}
-      <div className="w-80 bg-slate-900 p-5 flex flex-col border-r border-slate-800 z-20 shadow-2xl">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Saved Plans</h2>
-          <button onClick={fetchPlans} className="text-[10px] text-slate-500 hover:text-white transition">Refresh ↻</button>
+      
+      {/* --- LOAD PLAN MODAL --- */}
+      {showLoadModal && (
+        <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-10">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-2xl h-[80vh] rounded-2xl p-6 flex flex-col shadow-2xl">
+            <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
+              <h2 className="text-2xl font-serif text-white">Your Saved Plans</h2>
+              <button onClick={() => setShowLoadModal(false)} className="text-slate-400 hover:text-white text-2xl">&times;</button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3">
+              {plans.length === 0 && <p className="text-center text-slate-500 italic mt-10">No plans saved yet.</p>}
+              {plans.map(p => (
+                <div key={p.id} className="flex items-center justify-between p-4 bg-slate-800 rounded-xl hover:bg-slate-700 transition border border-slate-700 group">
+                  <div onClick={() => loadPlan(p)} className="flex-1 cursor-pointer">
+                    <h3 className="font-bold text-lg text-white group-hover:text-indigo-400 transition">{p.name}</h3>
+                    <p className="text-xs text-slate-400">Modified: {new Date(p.created_at).toLocaleString()}</p>
+                    <p className="text-xs text-slate-500">{Object.keys(p.data.tables || {}).length} Tables • {(p.data.unassigned || []).length} Unassigned</p>
+                  </div>
+                  <button onClick={() => loadPlan(p)} className="bg-indigo-600 text-xs font-bold px-4 py-2 rounded-lg mr-2 hover:bg-indigo-500">OPEN</button>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
-        <div className="mb-6 max-h-48 overflow-y-auto space-y-2 custom-scrollbar">
-          {plans.map(p => (
-            <button key={p.id} onClick={() => loadPlan(p)} className={`w-full text-left p-3 rounded-xl border text-[10px] transition-all ${currentPlanId === p.id ? 'bg-indigo-900/40 border-indigo-500' : 'bg-slate-900 border-slate-700 hover:border-slate-500'}`}>
-              <p className="font-bold text-slate-100">{p.name}</p>
-              <p className="opacity-50 text-[8px] uppercase">{new Date(p.created_at).toLocaleDateString()}</p>
-            </button>
-          ))}
-        </div>
+      )}
+
+      {/* --- SIDEBAR --- */}
+      <div className="w-80 bg-slate-900 p-5 flex flex-col border-r border-slate-800 z-20 shadow-2xl relative">
+        <h2 className="text-xs font-black text-indigo-400 uppercase tracking-widest mb-4">Guest List</h2>
         
+        {/* Guest Controls */}
         <div className="flex gap-2 mb-4">
-          <label className="flex-1 bg-indigo-600 text-center p-2.5 rounded-xl cursor-pointer font-bold text-[10px] uppercase hover:bg-indigo-500 transition">
-            + Import CSV<input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
+          <label className="flex-1 bg-indigo-600 text-center p-3 rounded-xl cursor-pointer font-bold text-[10px] uppercase hover:bg-indigo-500 transition shadow-lg">
+            Import CSV<input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
           </label>
+          <button onClick={() => setUnassigned([])} className="px-3 bg-slate-800 border border-slate-700 rounded-xl text-[10px] font-bold text-slate-400 hover:text-white">Clear</button>
         </div>
 
-        <div className="flex-1 overflow-y-auto space-y-1.5 pr-2 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto space-y-1.5 pr-2 custom-scrollbar bg-slate-900/50 rounded-xl mb-4">
+          {unassigned.length === 0 && <p className="text-[10px] text-slate-600 text-center mt-4">No unassigned guests</p>}
           {unassigned.map(name => (
-            <div key={name} draggable onDragStart={() => { window.draggedGuest = name; window.draggedSource = 'sidebar'; }} className="p-3 bg-slate-800 rounded-xl text-[10px] cursor-grab hover:bg-slate-700 transition-colors">{name}</div>
+            <div key={name} draggable onDragStart={() => { window.draggedGuest = name; window.draggedSource = 'sidebar'; }} className="p-3 bg-slate-800 border border-slate-700 rounded-xl text-[10px] cursor-grab hover:bg-slate-700 hover:border-indigo-500/50 transition-colors shadow-sm">{name}</div>
           ))}
         </div>
 
-        <div className="mt-4 pt-4 border-t border-slate-800">
-           <p className="text-[9px] font-bold text-slate-500 uppercase mb-2">Add New Table:</p>
-           <div className="flex gap-2 mb-3">
-             <button onClick={() => addTable('circle')} className="flex-1 bg-slate-800 hover:bg-slate-700 p-2 rounded-lg text-[10px] font-bold border border-slate-700">Circle</button>
-             <button onClick={() => addTable('square')} className="flex-1 bg-slate-800 hover:bg-slate-700 p-2 rounded-lg text-[10px] font-bold border border-slate-700">Square</button>
-             <button onClick={() => addTable('rect')} className="flex-1 bg-slate-800 hover:bg-slate-700 p-2 rounded-lg text-[10px] font-bold border border-slate-700">Rect</button>
+        {/* Plan Controls */}
+        <div className="border-t border-slate-800 pt-4 space-y-3">
+           <input value={planName} onChange={e => setPlanName(e.target.value)} placeholder="Plan Name (e.g. Version 1)" className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs outline-none focus:border-indigo-500 transition-colors" />
+           
+           <div className="grid grid-cols-2 gap-2">
+             <button onClick={() => savePlan(false)} className="bg-emerald-600 p-2.5 rounded-xl font-bold text-[10px] uppercase hover:bg-emerald-500 shadow-lg text-white">Save</button>
+             <button onClick={() => savePlan(true)} className="bg-slate-700 p-2.5 rounded-xl font-bold text-[10px] uppercase hover:bg-slate-600 shadow-lg text-slate-300">Save Copy</button>
            </div>
            
-           <input value={planName} onChange={e => setPlanName(e.target.value)} placeholder="Event Name..." className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs outline-none mb-2" />
-           <div className="flex gap-2">
-             <button onClick={saveToDashboard} className="flex-1 bg-emerald-600 p-2.5 rounded-xl font-bold text-xs uppercase hover:bg-emerald-500 transition shadow-lg">Save</button>
-             
-             {/* EXPORT BUTTON */}
-             <button onClick={exportToPDF} className="bg-slate-700 p-2.5 rounded-xl font-bold text-xs uppercase hover:bg-slate-600 transition shadow-lg text-slate-300">
-                Export PDF
-             </button>
-           </div>
+           <button onClick={() => setShowLoadModal(true)} className="w-full bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 p-2.5 rounded-xl font-bold text-[10px] uppercase hover:bg-indigo-600/30 transition">
+              📂 Manage Plans / Versions
+           </button>
+           
+           <button onClick={exportToPDF} className="w-full bg-slate-800 border border-slate-700 text-slate-400 p-2.5 rounded-xl font-bold text-[10px] uppercase hover:text-white transition">
+              Export to PDF
+           </button>
+        </div>
+
+        {/* LOGOUT */}
+        <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between items-center">
+          <span className="text-[10px] text-slate-500 truncate max-w-[120px]">{session.user.email}</span>
+          <button onClick={handleLogout} className="text-[10px] text-red-400 hover:text-red-300 font-bold uppercase">Log Out</button>
         </div>
       </div>
 
-      {/* STAGE */}
+      {/* --- STAGE --- */}
       <div className="flex-1 bg-slate-950 flex items-center justify-center p-8 overflow-hidden relative">
-        <div className="absolute top-4 right-4 text-slate-700 text-[10px] font-mono pointer-events-none">FIXED RATIO 16:9</div>
+        
+        {/* Toolbar Hint */}
+        {selectedTableId && <div className="absolute top-6 left-1/2 -translate-x-1/2 text-slate-500 text-[10px] animate-pulse">Table Selected</div>}
 
         <div 
           ref={canvasRef} 
+          data-type="canvas-bg"
           className="aspect-video w-full max-h-full bg-white rounded shadow-2xl relative border border-slate-800 touch-none"
           style={{ backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '20px 20px' }}
           onDragOver={(e) => e.preventDefault()}
@@ -327,6 +383,7 @@ export default function SeatingPlanner() {
             const seated = tables[id] || [];
             const isDragging = dragState?.id === id;
             const isResizing = resizeState?.id === id;
+            const isSelected = selectedTableId === id;
             const isFull = seated.length >= capacity;
 
             const renderWidth = config.width ? `${config.width}%` : '14%';
@@ -334,56 +391,83 @@ export default function SeatingPlanner() {
             const renderAspect = isRect ? 'auto' : '1 / 1';
             
             return (
-              <div 
-                key={id} 
-                onPointerDown={(e) => handlePointerDown(e, id)}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onContextMenu={(e) => handleContextMenu(e, id)}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => { e.stopPropagation(); if (window.draggedGuest) moveGuest(window.draggedGuest, window.draggedSource, id); }}
-                style={{ 
-                  left: `${config.x}%`, top: `${config.y}%`, transform: 'translate(-50%, -50%)', 
-                  width: renderWidth, height: renderHeight, aspectRatio: renderAspect,
-                  cursor: isDragging ? 'grabbing' : 'grab', zIndex: isDragging || isResizing ? 50 : 10
-                }}
-                className={`absolute flex flex-col items-center justify-center p-2 border-[3px] transition-shadow select-none group
-                  ${isCircle ? 'rounded-full' : 'rounded-lg'} 
-                  ${isFull ? 'border-red-600 bg-red-100 shadow-red-500/50 shadow-lg' : 'bg-white border-slate-300 shadow-md hover:border-indigo-400'}`}
-              >
-                <div className="no-drag absolute bottom-0 right-0 w-6 h-6 cursor-se-resize flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-50"
-                   onPointerDown={(e) => handleResizePointerDown(e, id)}>
-                    <div className="w-2.5 h-2.5 bg-indigo-500 rounded-sm border border-white shadow-sm"></div>
+              <React.Fragment key={id}>
+                <div 
+                  onPointerDown={(e) => handlePointerDown(e, id)}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => { e.stopPropagation(); if (window.draggedGuest) moveGuest(window.draggedGuest, window.draggedSource, id); }}
+                  style={{ 
+                    left: `${config.x}%`, top: `${config.y}%`, transform: 'translate(-50%, -50%)', 
+                    width: renderWidth, height: renderHeight, aspectRatio: renderAspect,
+                    cursor: isDragging ? 'grabbing' : 'grab', zIndex: isDragging || isResizing || isSelected ? 50 : 10,
+                  }}
+                  className={`absolute flex flex-col items-center justify-center p-2 border-[3px] transition-all select-none group
+                    ${isCircle ? 'rounded-full' : 'rounded-lg'} 
+                    ${isSelected ? 'border-indigo-500 ring-4 ring-indigo-500/20' : (isFull ? 'border-red-500' : 'border-slate-300')}
+                    ${isFull ? 'bg-red-50' : 'bg-white shadow-md hover:border-indigo-400'}`}
+                >
+                  {/* Resize Handle */}
+                  {isSelected && (
+                    <div className="no-drag absolute bottom-0 right-0 w-6 h-6 cursor-se-resize flex items-center justify-center z-50"
+                        onPointerDown={(e) => handleResizePointerDown(e, id)}>
+                        <div className="w-3 h-3 bg-indigo-500 rounded-sm border border-white shadow-sm"></div>
+                    </div>
+                  )}
+
+                  <span className={`text-[0.6rem] font-black mb-1 pointer-events-none uppercase tracking-tighter ${isFull ? 'text-red-800' : 'text-slate-700'}`}>Table {id}</span>
+                  <div className="grid grid-cols-2 gap-0.5 w-full pointer-events-none px-1 overflow-hidden">
+                    {seated.map(g => <div key={g} className="text-[0.35rem] bg-slate-100 border border-slate-200 p-0.5 rounded truncate text-center font-bold text-slate-600">{g}</div>)}
+                  </div>
                 </div>
-                <span className={`text-[0.6rem] md:text-[0.7rem] font-black mb-1 pointer-events-none uppercase tracking-tighter ${isFull ? 'text-red-800' : 'text-slate-700'}`}>Table {id}</span>
-                <div className="grid grid-cols-2 gap-1 w-full pointer-events-none px-1 overflow-hidden">
-                  {seated.map(g => <div key={g} className="text-[0.35rem] md:text-[0.45rem] bg-slate-100 border border-slate-200 p-0.5 rounded truncate text-center font-bold text-slate-600">{g}</div>)}
-                </div>
-              </div>
+
+                {/* --- FLOATING CONTEXT TOOLBAR (Replaces Context Menu) --- */}
+                {isSelected && (
+                  <div 
+                    className="absolute z-[100] bg-slate-800 text-white p-1.5 rounded-full shadow-2xl flex items-center gap-2 border border-slate-600 no-drag"
+                    style={{ 
+                      left: `${config.x}%`, 
+                      top: `${config.y}%`,
+                      transform: 'translate(-50%, -160%)' // Floats above table
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                     <div className="flex bg-slate-900 rounded-full p-1 border border-slate-700">
+                        <button onClick={() => updateTableShape(id, 'circle')} className={`p-1.5 rounded-full hover:bg-indigo-600 ${config.shape === 'circle' ? 'text-indigo-400' : 'text-slate-400'}`} title="Circle"><IconCircle/></button>
+                        <button onClick={() => updateTableShape(id, 'square')} className={`p-1.5 rounded-full hover:bg-indigo-600 ${config.shape === 'square' ? 'text-indigo-400' : 'text-slate-400'}`} title="Square"><IconSquare/></button>
+                        <button onClick={() => updateTableShape(id, 'rect')} className={`p-1.5 rounded-full hover:bg-indigo-600 ${config.shape === 'rect' ? 'text-indigo-400' : 'text-slate-400'}`} title="Rectangle"><IconRect/></button>
+                     </div>
+                     <div className="h-4 w-px bg-slate-600 mx-1"></div>
+                     <div className="flex items-center gap-1">
+                        <button onClick={() => updateTableCapacity(id, -1)} className="w-5 h-5 flex items-center justify-center bg-slate-700 rounded-full hover:bg-white hover:text-black font-bold text-xs">-</button>
+                        <span className="text-[10px] font-mono min-w-[12px] text-center">{capacity}</span>
+                        <button onClick={() => updateTableCapacity(id, 1)} className="w-5 h-5 flex items-center justify-center bg-slate-700 rounded-full hover:bg-white hover:text-black font-bold text-xs">+</button>
+                     </div>
+                     <div className="h-4 w-px bg-slate-600 mx-1"></div>
+                     <button onClick={() => deleteTable(id)} className="p-1.5 hover:bg-red-500 rounded-full text-red-400 hover:text-white transition"><IconTrash/></button>
+                  </div>
+                )}
+              </React.Fragment>
             );
           })}
         </div>
 
-        {/* CONTEXT MENU */}
-        {contextMenu && (
-          <div className="fixed bg-slate-800 text-white p-2 rounded-xl shadow-2xl z-[100] border border-slate-700 min-w-[150px] flex flex-col gap-1"
-               style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(e) => e.stopPropagation()}>
-            <p className="text-[10px] font-bold text-slate-400 uppercase px-2 py-1 border-b border-slate-700 mb-1">Edit Table {contextMenu.tableId}</p>
-            <div className="flex gap-1 p-1">
-               <button onClick={() => updateTableShape(contextMenu.tableId, 'circle')} className="flex-1 text-[9px] bg-slate-700 hover:bg-indigo-600 py-1 rounded">Circle</button>
-               <button onClick={() => updateTableShape(contextMenu.tableId, 'square')} className="flex-1 text-[9px] bg-slate-700 hover:bg-indigo-600 py-1 rounded">Square</button>
-               <button onClick={() => updateTableShape(contextMenu.tableId, 'rect')} className="flex-1 text-[9px] bg-slate-700 hover:bg-indigo-600 py-1 rounded">Rect</button>
-            </div>
-            <div className="flex items-center justify-between bg-slate-900 rounded p-1 mx-1">
-                <span className="text-[9px] text-slate-400 ml-1">Seats: {tablePos[contextMenu.tableId]?.capacity || 8}</span>
-                <div className="flex gap-1">
-                    <button onClick={() => updateTableCapacity(contextMenu.tableId, -1)} className="text-[10px] bg-slate-700 hover:text-white px-2 rounded font-bold">-</button>
-                    <button onClick={() => updateTableCapacity(contextMenu.tableId, 1)} className="text-[10px] bg-slate-700 hover:text-white px-2 rounded font-bold">+</button>
-                </div>
-            </div>
-            <button onClick={() => deleteTable(contextMenu.tableId)} className="text-[10px] text-red-300 hover:bg-red-900/50 hover:text-white py-1.5 rounded mt-1 font-bold">Delete Table</button>
-          </div>
-        )}
+        {/* --- ADD TABLE CONTROLS (Floating at Bottom) --- */}
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur border border-slate-700 p-2 rounded-2xl flex gap-3 shadow-2xl z-40">
+           <button onClick={() => addTable('circle')} className="flex flex-col items-center gap-1 p-2 hover:bg-indigo-600 rounded-xl group transition">
+             <div className="w-8 h-8 rounded-full border-2 border-slate-400 group-hover:border-white group-hover:bg-white/20"></div>
+             <span className="text-[8px] font-bold uppercase text-slate-400 group-hover:text-white">Circle</span>
+           </button>
+           <button onClick={() => addTable('square')} className="flex flex-col items-center gap-1 p-2 hover:bg-indigo-600 rounded-xl group transition">
+             <div className="w-8 h-8 rounded-lg border-2 border-slate-400 group-hover:border-white group-hover:bg-white/20"></div>
+             <span className="text-[8px] font-bold uppercase text-slate-400 group-hover:text-white">Square</span>
+           </button>
+           <button onClick={() => addTable('rect')} className="flex flex-col items-center gap-1 p-2 hover:bg-indigo-600 rounded-xl group transition">
+             <div className="w-10 h-6 mt-1 rounded-lg border-2 border-slate-400 group-hover:border-white group-hover:bg-white/20"></div>
+             <span className="text-[8px] font-bold uppercase text-slate-400 group-hover:text-white">Rectangle</span>
+           </button>
+        </div>
       </div>
     </div>
   );
