@@ -20,8 +20,8 @@ export default function SeatingPlanner() {
   const [searchTerm, setSearchTerm] = useState("");
   const [editingTable, setEditingTable] = useState(null);
 
-  // NEW: State for Precision Dragging
-  const [dragState, setDragState] = useState(null); // { id, startX, startY, initialX, initialY }
+  // Drag State for Pointer Events
+  const [dragState, setDragState] = useState(null); 
 
   const canvasRef = useRef(null);
 
@@ -67,57 +67,71 @@ export default function SeatingPlanner() {
   const addTable = () => {
     const nextId = Object.keys(tables).length + 1;
     setTables(prev => ({ ...prev, [nextId]: [] }));
-    setTablePos(prev => ({ ...prev, [nextId]: { x: 50, y: 50, shape: 'round', capacity: 8 } }));
+    // Default to 'circle'
+    setTablePos(prev => ({ ...prev, [nextId]: { x: 50, y: 50, shape: 'circle', capacity: 8 } }));
   };
 
-  const toggleTableShape = (id) => {
-    setTablePos(prev => ({ ...prev, [id]: { ...prev[id], shape: prev[id].shape === 'round' ? 'rect' : 'round' } }));
+  // NEW: Update Table Shape (Circle, Square, Rect)
+  const updateTableShape = (id, newShape) => {
+    setTablePos(prev => ({ ...prev, [id]: { ...prev[id], shape: newShape } }));
   };
 
-  // --- PRECISION POINTER DRAG LOGIC (The Fix) ---
+  // NEW: Delete Table & Rescue Guests
+  const deleteTable = (id) => {
+    if (!window.confirm(`Are you sure you want to delete Table ${id}?`)) return;
+
+    // 1. Rescue guests
+    const guestsAtTable = tables[id] || [];
+    if (guestsAtTable.length > 0) {
+      setUnassigned(prev => [...prev, ...guestsAtTable]);
+    }
+
+    // 2. Remove table data
+    const newTables = { ...tables };
+    delete newTables[id];
+    setTables(newTables);
+
+    const newTablePos = { ...tablePos };
+    delete newTablePos[id];
+    setTablePos(newTablePos);
+
+    setEditingTable(null);
+  };
+
+  // --- PRECISION POINTER DRAG ---
   const handlePointerDown = (e, id) => {
-    e.preventDefault(); // Prevent text selection
-    e.stopPropagation(); // Don't trigger other events
+    e.preventDefault(); 
+    e.stopPropagation(); 
 
     if (!canvasRef.current) return;
     
-    // 1. Capture the pointer so we keep tracking even if mouse leaves the div
     e.target.setPointerCapture(e.pointerId);
 
-    // 2. Calculate the 'Click Offset' (Where exactly inside the table did we click?)
-    // We work in Percentages to match our state
     const rect = canvasRef.current.getBoundingClientRect();
     const mouseXPercent = ((e.clientX - rect.left) / rect.width) * 100;
     const mouseYPercent = ((e.clientY - rect.top) / rect.height) * 100;
-
-    // Current Table Position
     const currentTable = tablePos[id];
 
     setDragState({
       id: id,
-      // The offset is the difference between the mouse % and the table center %
       offsetX: mouseXPercent - currentTable.x,
       offsetY: mouseYPercent - currentTable.y
     });
     
-    // Close settings menu if open
     setEditingTable(null);
   };
 
   const handlePointerMove = (e) => {
     if (!dragState || !canvasRef.current) return;
-    
     e.preventDefault();
 
     const rect = canvasRef.current.getBoundingClientRect();
     const mouseXPercent = ((e.clientX - rect.left) / rect.width) * 100;
     const mouseYPercent = ((e.clientY - rect.top) / rect.height) * 100;
 
-    // Apply the offset we calculated on click
     let newX = mouseXPercent - dragState.offsetX;
     let newY = mouseYPercent - dragState.offsetY;
 
-    // Clamp to canvas (0-100%)
     newX = Math.max(0, Math.min(100, newX));
     newY = Math.max(0, Math.min(100, newY));
 
@@ -134,7 +148,6 @@ export default function SeatingPlanner() {
     }
   };
 
-  // --- GUEST DRAG LOGIC (Keep HTML5 DnD for Sidebar) ---
   const moveGuest = (name, source, target) => {
     const targetCap = tablePos[target]?.capacity || 8;
     if (target !== 'sidebar' && (tables[target]?.length || 0) >= targetCap) return alert("Table is full!");
@@ -152,7 +165,7 @@ export default function SeatingPlanner() {
     if (!error) { setCurrentPlanId(data[0].id); fetchPlans(); alert("Saved!"); }
   };
 
-  if (!session) return ( /* LOGIN UI BLOCK */ 
+  if (!session) return (
     <div className="h-screen w-screen bg-slate-900 flex items-center justify-center text-white p-4">
       <form onSubmit={async (e) => { e.preventDefault(); await supabase.auth.signInWithPassword({ email, password }); }} className="bg-white/5 p-10 rounded-3xl border border-white/10 w-full max-w-md shadow-2xl">
         <h1 className="text-3xl font-serif mb-6 text-center italic">Wedding Dashboard</h1>
@@ -201,27 +214,29 @@ export default function SeatingPlanner() {
       <div className="flex-1 bg-slate-950 flex items-center justify-center p-8 overflow-hidden relative">
         <div className="absolute top-4 right-4 text-slate-700 text-[10px] font-mono pointer-events-none">FIXED RATIO 16:9</div>
 
-        {/* CANVAS */}
         <div 
           ref={canvasRef} 
           className="aspect-video w-full max-h-full bg-white rounded shadow-2xl relative border border-slate-800 touch-none"
           style={{ backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', backgroundSize: '20px 20px' }}
-          onDragOver={(e) => e.preventDefault()} // Allow Drop from Sidebar
+          onDragOver={(e) => e.preventDefault()}
           onDrop={() => { if (window.draggedGuest) moveGuest(window.draggedGuest, window.draggedSource, 'sidebar'); }}
         >
           {Object.entries(tablePos).map(([id, config]) => {
-            const isRound = config.shape === 'round';
+            // SHAPE LOGIC
+            const isRect = config.shape === 'rect';
+            const isSquare = config.shape === 'square';
+            // Default to 'circle' if not rect or square
+            const isCircle = !isRect && !isSquare; 
+            
             const seated = tables[id] || [];
             const isDragging = dragState?.id === id;
             
             return (
               <div 
                 key={id} 
-                // POINTER EVENTS for Table Dragging
                 onPointerDown={(e) => handlePointerDown(e, id)}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
-                // HTML5 DROP for Guest Dropping
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
                   e.stopPropagation();
@@ -231,26 +246,41 @@ export default function SeatingPlanner() {
                   left: `${config.x}%`, 
                   top: `${config.y}%`, 
                   transform: 'translate(-50%, -50%)', 
-                  width: isRound ? '14%' : `${10 + (config.capacity)}%`, 
-                  height: isRound ? 'auto' : '12%', 
-                  aspectRatio: isRound ? '1 / 1' : 'auto',
+                  // WIDTH: Rect grows, Circle/Square stay fixed relative to canvas
+                  width: isRect ? `${10 + (config.capacity)}%` : '14%', 
+                  // HEIGHT: Rect fixed height, Circle/Square use aspect-ratio
+                  height: isRect ? '12%' : 'auto', 
+                  aspectRatio: isRect ? 'auto' : '1 / 1',
                   cursor: isDragging ? 'grabbing' : 'grab',
                   zIndex: isDragging ? 50 : 10
                 }}
                 className={`absolute flex flex-col items-center justify-center p-2 border-[3px] transition-shadow select-none
-                  ${isRound ? 'rounded-full' : 'rounded-lg'} 
+                  ${isCircle ? 'rounded-full' : 'rounded-lg'} 
                   ${seated.length >= config.capacity ? 'border-rose-400 bg-rose-50' : 'bg-white border-slate-300 shadow-md hover:border-indigo-400'}`}
               >
+                {/* GEAR BUTTON */}
                 <button onPointerDown={(e) => e.stopPropagation()} onClick={() => setEditingTable(editingTable === id ? null : id)} className="absolute -top-3 -right-3 bg-slate-800 text-white p-1.5 rounded-full opacity-0 hover:opacity-100 transition-opacity z-50">⚙️</button>
                 
+                {/* SETTINGS MENU */}
                 {editingTable === id && (
-                  <div onPointerDown={(e) => e.stopPropagation()} className="absolute -top-16 left-1/2 -translate-x-1/2 bg-slate-800 p-2 rounded-xl flex gap-2 shadow-2xl z-[60] border border-slate-700 w-max">
-                    <button onClick={() => toggleTableShape(id)} className="text-[10px] bg-indigo-600 px-3 py-1 rounded-md font-bold text-white">Shape</button>
-                    <div className="flex items-center gap-2 bg-slate-900 px-2 rounded-md border border-slate-700">
+                  <div onPointerDown={(e) => e.stopPropagation()} className="absolute -top-24 left-1/2 -translate-x-1/2 bg-slate-800 p-2 rounded-xl flex flex-col gap-2 shadow-2xl z-[60] border border-slate-700 w-max">
+                    
+                    {/* Shape Selectors */}
+                    <div className="flex gap-1 justify-center">
+                        <button onClick={() => updateTableShape(id, 'circle')} className={`text-[8px] px-2 py-1 rounded ${isCircle ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>Circle</button>
+                        <button onClick={() => updateTableShape(id, 'square')} className={`text-[8px] px-2 py-1 rounded ${isSquare ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>Square</button>
+                        <button onClick={() => updateTableShape(id, 'rect')} className={`text-[8px] px-2 py-1 rounded ${isRect ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-400'}`}>Rect</button>
+                    </div>
+
+                    {/* Capacity Controls */}
+                    <div className="flex items-center justify-center gap-2 bg-slate-900 px-2 rounded-md border border-slate-700">
                       <button onClick={() => setTablePos(prev => ({...prev, [id]: {...prev[id], capacity: Math.max(2, config.capacity - 2)}}))} className="text-white font-bold">-</button>
                       <span className="text-[10px] text-white font-mono min-w-[12px] text-center">{config.capacity}</span>
                       <button onClick={() => setTablePos(prev => ({...prev, [id]: {...prev[id], capacity: Math.min(12, config.capacity + 2)}}))} className="text-white font-bold">+</button>
                     </div>
+
+                    {/* Delete Button */}
+                    <button onClick={() => deleteTable(id)} className="text-[8px] bg-red-900/50 text-red-200 border border-red-900 py-1 rounded hover:bg-red-900 hover:text-white transition-colors">Delete Table</button>
                   </div>
                 )}
 
