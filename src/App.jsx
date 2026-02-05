@@ -20,7 +20,7 @@ export default function SeatingPlanner() {
   
   // Interaction States
   const [dragState, setDragState] = useState(null); 
-  const [resizeState, setResizeState] = useState(null); // { id, startX, startY, startW, startH }
+  const [resizeState, setResizeState] = useState(null); 
   const [contextMenu, setContextMenu] = useState(null); 
 
   const canvasRef = useRef(null);
@@ -57,7 +57,6 @@ export default function SeatingPlanner() {
     setContextMenu(null);
   };
 
-  // --- ACTIONS ---
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -71,18 +70,25 @@ export default function SeatingPlanner() {
     }
   };
 
-  // NEW: Initialize with explicit Width/Height
+  // --- ACTIONS ---
+
+  // FIX: Initialize Defaults Correctly
   const addTable = (shapeType) => {
     const nextId = Object.keys(tables).length + 1;
     setTables(prev => ({ ...prev, [nextId]: [] }));
+    
+    // Default Sizes
+    const defaultWidth = shapeType === 'rect' ? 15 : 10; // Circles smaller width %
+    const defaultHeight = shapeType === 'rect' ? 15 : null; // Circles don't use height
+
     setTablePos(prev => ({ 
       ...prev, 
       [nextId]: { 
         x: 50, y: 50, 
         shape: shapeType, 
         capacity: 8,
-        width: 15,  // Default Width %
-        height: 15  // Default Height %
+        width: defaultWidth,
+        height: defaultHeight
       } 
     }));
   };
@@ -122,7 +128,7 @@ export default function SeatingPlanner() {
 
   // 1. DRAG START
   const handlePointerDown = (e, id) => {
-    if (e.target.closest('.no-drag')) return; // Ignore resize handles/buttons
+    if (e.target.closest('.no-drag')) return; 
     if (contextMenu) { setContextMenu(null); return; }
     
     e.preventDefault(); 
@@ -153,18 +159,17 @@ export default function SeatingPlanner() {
     const startX = ((e.clientX - rect.left) / rect.width) * 100;
     const startY = ((e.clientY - rect.top) / rect.height) * 100;
     
-    // Support legacy tables that might not have width/height yet
     const config = tablePos[id];
-    // Fallback logic for legacy size calculation
-    const fallbackWidth = config.shape === 'rect' ? (10 + (config.capacity || 8)) : 14;
-    const fallbackHeight = config.shape === 'rect' ? 12 : 14; // Circle/Square aspect ratio approximation
+    // Fallbacks
+    const fallbackWidth = config.shape === 'rect' ? (10 + (config.capacity || 8)) : 10;
+    const fallbackHeight = config.shape === 'rect' ? 12 : null; 
     
     setResizeState({
       id: id,
       startX: startX,
       startY: startY,
       startW: config.width || fallbackWidth, 
-      startH: config.height || (config.shape === 'rect' ? 12 : fallbackWidth) // Use width for height if circle/square
+      startH: config.height || fallbackHeight
     });
   };
 
@@ -179,28 +184,23 @@ export default function SeatingPlanner() {
         const currentX = ((e.clientX - rect.left) / rect.width) * 100;
         const currentY = ((e.clientY - rect.top) / rect.height) * 100;
 
-        // Calculate Delta
         const deltaX = currentX - resizeState.startX;
         const deltaY = currentY - resizeState.startY;
 
-        // "Expand from Center" Logic: We multiply delta by 2 because x/y is the center point.
-        let newWidth = resizeState.startW + (deltaX * 2);
-        let newHeight = resizeState.startH + (deltaY * 2);
-
-        // Constraints
         const config = tablePos[resizeState.id];
         const isRect = config.shape === 'rect';
 
-        // Min/Max Limits
-        newWidth = Math.max(5, Math.min(50, newWidth));
-        newHeight = Math.max(5, Math.min(50, newHeight));
+        // Multiply by 2 because we resize from center
+        let newWidth = resizeState.startW + (deltaX * 2);
+        
+        // FIX: Only calculate height for Rectangles. 
+        // For Circle/Square, we ignore height calculation entirely.
+        let newHeight = isRect ? (resizeState.startH + (deltaY * 2)) : null;
 
-        // Aspect Ratio Lock for Circle/Square
-        if (!isRect) {
-            // Use the larger dimension change to drive the size
-            const maxDimension = Math.max(newWidth, newHeight);
-            newWidth = maxDimension;
-            newHeight = maxDimension;
+        // Constraints
+        newWidth = Math.max(5, Math.min(50, newWidth));
+        if (isRect) {
+            newHeight = Math.max(5, Math.min(50, newHeight));
         }
 
         setTablePos(prev => ({
@@ -335,14 +335,14 @@ export default function SeatingPlanner() {
             const capacity = config.capacity || 8; 
             const seated = tables[id] || [];
             const isDragging = dragState?.id === id;
-            const isResizing = resizeState?.id === id;
             const isFull = seated.length >= capacity;
 
-            // Legacy Fallback for Width/Height if table was created in old version
-            const renderWidth = config.width ? `${config.width}%` : (isRect ? `${10 + capacity}%` : '14%');
-            const renderHeight = config.height ? `${config.height}%` : (isRect ? '12%' : 'auto');
-            const renderAspect = config.width ? (isRect ? 'auto' : '1/1') : (isRect ? 'auto' : '1/1');
-            // If legacy circular table doesn't have height calculated yet, auto aspect ratio handles it.
+            // FIX: Render Logic
+            // If it's a Rectangle, use both width and height.
+            // If it's a Circle/Square, use width, FORCE height to auto, FORCE aspect-ratio 1/1
+            const renderWidth = config.width ? `${config.width}%` : '14%';
+            const renderHeight = isRect ? (config.height ? `${config.height}%` : '12%') : 'auto';
+            const renderAspect = isRect ? 'auto' : '1 / 1';
             
             return (
               <div 
@@ -364,16 +364,15 @@ export default function SeatingPlanner() {
                   height: renderHeight, 
                   aspectRatio: renderAspect,
                   cursor: isDragging ? 'grabbing' : 'grab',
-                  zIndex: isDragging || isResizing ? 50 : 10
+                  zIndex: isDragging ? 50 : 10
                 }}
                 className={`absolute flex flex-col items-center justify-center p-2 border-[3px] transition-shadow select-none group
                   ${isCircle ? 'rounded-full' : 'rounded-lg'} 
                   ${isFull ? 'border-red-600 bg-red-100 shadow-red-500/50 shadow-lg' : 'bg-white border-slate-300 shadow-md hover:border-indigo-400'}`}
               >
-                
                 {/* RESIZE HANDLE */}
                 <div 
-                   className="no-drag absolute bottom-0 right-0 w-4 h-4 cursor-se-resize flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-50"
+                   className="no-drag absolute bottom-0 right-0 w-6 h-6 cursor-se-resize flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-50"
                    onPointerDown={(e) => handleResizePointerDown(e, id)}
                 >
                     <div className="w-2.5 h-2.5 bg-indigo-500 rounded-sm border border-white shadow-sm"></div>
