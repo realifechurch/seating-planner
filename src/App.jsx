@@ -22,7 +22,7 @@ export default function SeatingPlanner() {
 
   const canvasRef = useRef(null);
 
-  // 1. Auth & Session Listener
+  // --- AUTH & DATA SYNC ---
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -31,11 +31,8 @@ export default function SeatingPlanner() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // 2. Fetch Plans - Robust Trigger
   useEffect(() => {
-    if (session?.user?.id) {
-      fetchPlans();
-    }
+    if (session?.user?.id) fetchPlans();
   }, [session]);
 
   const fetchPlans = async () => {
@@ -45,12 +42,8 @@ export default function SeatingPlanner() {
         .select('*')
         .eq('user_id', session.user.id)
         .order('created_at', { ascending: false });
-      
-      if (error) throw error;
       if (data) setPlans(data);
-    } catch (err) {
-      console.error("Error fetching plans:", err.message);
-    }
+    } catch (err) { console.error(err); }
   };
 
   const loadPlan = (p) => {
@@ -62,6 +55,7 @@ export default function SeatingPlanner() {
     setEditingTable(null);
   };
 
+  // --- ACTIONS ---
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -78,9 +72,8 @@ export default function SeatingPlanner() {
   const addTable = () => {
     const nextId = Object.keys(tables).length + 1;
     setTables(prev => ({ ...prev, [nextId]: [] }));
-    setTablePos(prev => ({ ...prev, [nextId]: { 
-      x: 50, y: 50, shape: 'round', capacity: 8 
-    }}));
+    // Initialize in center of the fixed canvas
+    setTablePos(prev => ({ ...prev, [nextId]: { x: 50, y: 50, shape: 'round', capacity: 8 } }));
   };
 
   const toggleTableShape = (id) => {
@@ -90,18 +83,25 @@ export default function SeatingPlanner() {
     }));
   };
 
-  // DEFECT FIX: Precise Table Dragging
+  // --- CORE LOGIC: Aspect Ratio Coordinate Calculation ---
   const handleTableDragEnd = (e, id) => {
     if (!canvasRef.current) return;
+    
+    // Get the bounding box of the FIXED RATIO canvas (The "Paper")
     const rect = canvasRef.current.getBoundingClientRect();
     
-    // Calculate position as percentage of canvas width/height
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    // Calculate raw position relative to the paper
+    const rawX = e.clientX - rect.left;
+    const rawY = e.clientY - rect.top;
+    
+    // Convert to percentage
+    const x = (rawX / rect.width) * 100;
+    const y = (rawY / rect.height) * 100;
 
-    // Constrain within 5-95% to prevent tables from flying off screen
-    const boundedX = Math.max(5, Math.min(95, x));
-    const boundedY = Math.max(5, Math.min(95, y));
+    // Allow full 0-100 range (The "Entire Floor")
+    // We only clamp slightly to ensure it doesn't disappear completely
+    const boundedX = Math.max(0, Math.min(100, x));
+    const boundedY = Math.max(0, Math.min(100, y));
 
     setTablePos(prev => ({
       ...prev,
@@ -121,7 +121,7 @@ export default function SeatingPlanner() {
   };
 
   const saveToDashboard = async () => {
-    if (!planName) return alert("Please enter a name for your wedding plan.");
+    if (!planName) return alert("Please name your plan.");
     const { data, error } = await supabase
       .from('seating_plans')
       .upsert({ 
@@ -132,16 +132,10 @@ export default function SeatingPlanner() {
       })
       .select();
 
-    if (error) {
-      alert("Error saving: " + error.message);
-    } else {
-      setCurrentPlanId(data[0].id);
-      fetchPlans();
-      alert("Wedding plan synced!");
-    }
+    if (!error) { setCurrentPlanId(data[0].id); fetchPlans(); alert("Layout Saved!"); }
   };
 
-  // 3. FULL LOGIN SCREEN (Resolves Vercel Build Error)
+  // --- LOGIN UI ---
   if (!session) return (
     <div className="h-screen w-screen bg-slate-900 flex items-center justify-center text-white p-4">
       <form onSubmit={async (e) => { 
@@ -151,31 +145,18 @@ export default function SeatingPlanner() {
         }} 
         className="bg-white/5 p-10 rounded-3xl border border-white/10 w-full max-w-md shadow-2xl">
         <h1 className="text-3xl font-serif mb-6 text-center italic">Wedding Dashboard</h1>
-        <input 
-          type="email" 
-          placeholder="Email" 
-          className="w-full bg-slate-800 border border-slate-700 p-4 rounded-xl mb-4 outline-none focus:border-indigo-500" 
-          value={email} 
-          onChange={e => setEmail(e.target.value)} 
-        />
-        <input 
-          type="password" 
-          placeholder="Password" 
-          className="w-full bg-slate-800 border border-slate-700 p-4 rounded-xl mb-6 outline-none focus:border-indigo-500" 
-          value={password} 
-          onChange={e => setPassword(e.target.value)} 
-        />
-        <button type="submit" className="w-full bg-indigo-600 py-4 rounded-xl font-bold uppercase tracking-widest shadow-lg shadow-indigo-500/20 hover:bg-indigo-500 transition-colors">
-          Sign In
-        </button>
+        <input type="email" placeholder="Email" className="w-full bg-slate-800 border border-slate-700 p-4 rounded-xl mb-4 outline-none focus:border-indigo-500" value={email} onChange={e => setEmail(e.target.value)} />
+        <input type="password" placeholder="Password" className="w-full bg-slate-800 border border-slate-700 p-4 rounded-xl mb-6 outline-none focus:border-indigo-500" value={password} onChange={e => setPassword(e.target.value)} />
+        <button type="submit" className="w-full bg-indigo-600 py-4 rounded-xl font-bold uppercase tracking-widest shadow-lg hover:bg-indigo-500 transition-colors">Sign In</button>
       </form>
     </div>
   );
 
   return (
     <div className="flex h-screen w-screen bg-slate-950 text-slate-200 overflow-hidden font-sans">
-      {/* SIDEBAR */}
-      <div className="w-80 bg-slate-900 p-5 flex flex-col border-r border-slate-800">
+      
+      {/* --- LEFT SIDEBAR --- */}
+      <div className="w-80 bg-slate-900 p-5 flex flex-col border-r border-slate-800 z-20 shadow-2xl">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Saved Plans</h2>
           <button onClick={fetchPlans} className="text-[10px] text-slate-500 hover:text-white transition">Refresh ↻</button>
@@ -208,15 +189,27 @@ export default function SeatingPlanner() {
         <div className="mt-4 pt-4 border-t border-slate-800 space-y-2">
            <input value={planName} onChange={e => setPlanName(e.target.value)} placeholder="Event Name..." className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs outline-none" />
            <button onClick={addTable} className="w-full bg-slate-800 p-2.5 rounded-xl text-[10px] font-black uppercase hover:bg-slate-700 transition">+ New Table</button>
-           <button onClick={saveToDashboard} className="w-full bg-emerald-600 p-2.5 rounded-xl font-bold text-xs uppercase hover:bg-emerald-500 transition shadow-lg">Save to Dashboard</button>
+           <button onClick={saveToDashboard} className="w-full bg-emerald-600 p-2.5 rounded-xl font-bold text-xs uppercase hover:bg-emerald-500 transition shadow-lg">Save Layout</button>
         </div>
       </div>
 
-      {/* CANVAS */}
-      <div className="flex-1 p-10 bg-slate-950">
+      {/* --- MAIN STAGE AREA --- */}
+      <div className="flex-1 bg-slate-950 flex items-center justify-center p-8 overflow-hidden relative">
+        
+        {/* Background Hint */}
+        <div className="absolute top-4 right-4 text-slate-700 text-[10px] font-mono pointer-events-none">
+          CANVAS: 16:9 FIXED RATIO
+        </div>
+
+        {/* --- FIXED ASPECT RATIO CANVAS (The "Paper") --- */}
+        {/* 'aspect-video' forces 16:9. 'w-full' tries to fill width. 'max-h-full' ensures it doesn't overflow height. */}
         <div 
           ref={canvasRef} 
-          className="h-full w-full bg-white rounded-[3rem] shadow-2xl relative overflow-hidden border-[12px] border-slate-900"
+          className="aspect-video w-full max-h-full bg-white rounded shadow-2xl relative border border-slate-800"
+          style={{ 
+             backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', 
+             backgroundSize: '20px 20px' 
+          }}
           onDragOver={(e) => e.preventDefault()}
           onDrop={() => {
             if (window.draggedGuest && window.draggedSource !== 'sidebar') {
@@ -241,40 +234,41 @@ export default function SeatingPlanner() {
                 style={{ 
                   left: `${config.x}%`, 
                   top: `${config.y}%`, 
-                  transform: 'translate(-50%, -50%)',
-                  width: isRound ? '160px' : `${110 + (config.capacity * 12)}px`,
-                  height: isRound ? '160px' : '100px'
+                  transform: 'translate(-50%, -50%)', // Centers the table on its X/Y coordinate
+                  width: isRound ? '14%' : `${10 + (config.capacity)}%`, // Responsive Width %
+                  height: isRound ? 'auto' : '12%', // Responsive Height %
+                  aspectRatio: isRound ? '1 / 1' : 'auto'
                 }}
-                className={`absolute flex flex-col items-center justify-center p-4 border-2 transition-shadow group cursor-move
-                  ${isRound ? 'rounded-full' : 'rounded-2xl'} 
-                  ${seated.length >= config.capacity ? 'border-rose-400 bg-rose-50' : 'bg-white border-slate-200 shadow-lg hover:border-indigo-300'}`}
+                className={`absolute flex flex-col items-center justify-center p-2 border-[3px] transition-shadow group cursor-move select-none z-10
+                  ${isRound ? 'rounded-full' : 'rounded-lg'} 
+                  ${seated.length >= config.capacity ? 'border-rose-400 bg-rose-50' : 'bg-white border-slate-300 shadow-md hover:shadow-xl hover:border-indigo-400'}`}
               >
                 {/* SETTINGS GEAR */}
                 <button 
                   draggable={false}
                   onClick={(e) => { e.stopPropagation(); setEditingTable(editingTable === id ? null : id); }} 
-                  className="absolute -top-2 -right-2 bg-slate-800 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-50 shadow-md"
+                  className="absolute -top-3 -right-3 bg-slate-800 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-50 shadow-md hover:scale-110"
                 >⚙️</button>
                 
                 {editingTable === id && (
                   <div 
                     draggable={false}
-                    className="absolute -top-14 bg-slate-800 p-2 rounded-xl flex gap-2 shadow-2xl z-[60] border border-slate-700"
+                    className="absolute -top-16 left-1/2 -translate-x-1/2 bg-slate-800 p-2 rounded-xl flex gap-2 shadow-2xl z-[60] border border-slate-700 w-max"
                     onClick={e => e.stopPropagation()}
                   >
-                    <button onClick={() => toggleTableShape(id)} className="text-[10px] bg-indigo-600 px-3 py-1 rounded-md font-bold">Shape</button>
-                    <div className="flex items-center gap-2 bg-slate-900 px-2 rounded-md">
-                      <button onClick={() => setTablePos(prev => ({...prev, [id]: {...prev[id], capacity: Math.max(2, config.capacity - 2)}}))} className="text-white">-</button>
-                      <span className="text-[10px] text-white font-mono">{config.capacity}</span>
-                      <button onClick={() => setTablePos(prev => ({...prev, [id]: {...prev[id], capacity: Math.min(12, config.capacity + 2)}}))} className="text-white">+</button>
+                    <button onClick={() => toggleTableShape(id)} className="text-[10px] bg-indigo-600 px-3 py-1 rounded-md font-bold text-white hover:bg-indigo-500">Shape</button>
+                    <div className="flex items-center gap-2 bg-slate-900 px-2 rounded-md border border-slate-700">
+                      <button onClick={() => setTablePos(prev => ({...prev, [id]: {...prev[id], capacity: Math.max(2, config.capacity - 2)}}))} className="text-white hover:text-indigo-400 font-bold">-</button>
+                      <span className="text-[10px] text-white font-mono min-w-[12px] text-center">{config.capacity}</span>
+                      <button onClick={() => setTablePos(prev => ({...prev, [id]: {...prev[id], capacity: Math.min(12, config.capacity + 2)}}))} className="text-white hover:text-indigo-400 font-bold">+</button>
                     </div>
                   </div>
                 )}
 
-                <span className="text-[11px] font-black text-slate-800 mb-1 pointer-events-none uppercase">Table {id}</span>
-                <div className="grid grid-cols-2 gap-1 w-full pointer-events-none">
+                <span className="text-[0.6rem] md:text-[0.7rem] font-black text-slate-700 mb-1 pointer-events-none uppercase tracking-tighter">Table {id}</span>
+                <div className="grid grid-cols-2 gap-1 w-full pointer-events-none px-1">
                   {seated.map(g => (
-                    <div key={g} className="text-[7px] bg-slate-50 border p-1 rounded-md truncate text-center font-bold text-slate-700 shadow-sm">{g}</div>
+                    <div key={g} className="text-[0.4rem] md:text-[0.5rem] bg-slate-100 border border-slate-200 p-0.5 rounded truncate text-center font-bold text-slate-600">{g}</div>
                   ))}
                 </div>
               </div>
