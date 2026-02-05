@@ -17,10 +17,11 @@ export default function SeatingPlanner() {
   const [unassigned, setUnassigned] = useState([]);
   const [tables, setTables] = useState({});
   const [tablePos, setTablePos] = useState({}); 
-  const [dragState, setDragState] = useState(null); 
   
-  // Context Menu State
-  const [contextMenu, setContextMenu] = useState(null); // { x, y, tableId }
+  // Interaction States
+  const [dragState, setDragState] = useState(null); 
+  const [resizeState, setResizeState] = useState(null); // { id, startX, startY, startW, startH }
+  const [contextMenu, setContextMenu] = useState(null); 
 
   const canvasRef = useRef(null);
 
@@ -70,13 +71,19 @@ export default function SeatingPlanner() {
     }
   };
 
-  // Add Table with Shape Argument
+  // NEW: Initialize with explicit Width/Height
   const addTable = (shapeType) => {
     const nextId = Object.keys(tables).length + 1;
     setTables(prev => ({ ...prev, [nextId]: [] }));
     setTablePos(prev => ({ 
       ...prev, 
-      [nextId]: { x: 50, y: 50, shape: shapeType, capacity: 8 } 
+      [nextId]: { 
+        x: 50, y: 50, 
+        shape: shapeType, 
+        capacity: 8,
+        width: 15,  // Default Width %
+        height: 15  // Default Height %
+      } 
     }));
   };
 
@@ -86,22 +93,17 @@ export default function SeatingPlanner() {
 
   const updateTableCapacity = (id, delta) => {
     setTablePos(prev => {
-        const current = prev[id].capacity || 8; // Default to 8 if missing
-        const newCap = Math.max(2, Math.min(20, current + delta)); // Limit between 2 and 20
+        const current = prev[id].capacity || 8;
+        const newCap = Math.max(2, Math.min(20, current + delta));
         return { ...prev, [id]: { ...prev[id], capacity: newCap } };
     });
   };
 
   const deleteTable = (id) => {
     if (!window.confirm(`Delete Table ${id}? Guests will be moved to unassigned.`)) return;
-
-    // Rescue guests
     const guestsAtTable = tables[id] || [];
-    if (guestsAtTable.length > 0) {
-      setUnassigned(prev => [...prev, ...guestsAtTable]);
-    }
-
-    // Delete data
+    if (guestsAtTable.length > 0) setUnassigned(prev => [...prev, ...guestsAtTable]);
+    
     const newTables = { ...tables };
     delete newTables[id];
     setTables(newTables);
@@ -115,27 +117,17 @@ export default function SeatingPlanner() {
   const handleContextMenu = (e, id) => {
     e.preventDefault(); 
     e.stopPropagation();
-    
-    // Calculate position relative to viewport
-    setContextMenu({
-      x: e.clientX,
-      y: e.clientY,
-      tableId: id
-    });
+    setContextMenu({ x: e.clientX, y: e.clientY, tableId: id });
   };
 
+  // 1. DRAG START
   const handlePointerDown = (e, id) => {
-    // If context menu is open, close it and don't drag
-    if (contextMenu) {
-        setContextMenu(null);
-        return;
-    }
+    if (e.target.closest('.no-drag')) return; // Ignore resize handles/buttons
+    if (contextMenu) { setContextMenu(null); return; }
     
     e.preventDefault(); 
     e.stopPropagation(); 
-
     if (!canvasRef.current) return;
-    
     e.target.setPointerCapture(e.pointerId);
 
     const rect = canvasRef.current.getBoundingClientRect();
@@ -150,30 +142,106 @@ export default function SeatingPlanner() {
     });
   };
 
-  const handlePointerMove = (e) => {
-    if (!dragState || !canvasRef.current) return;
+  // 2. RESIZE START
+  const handleResizePointerDown = (e, id) => {
     e.preventDefault();
+    e.stopPropagation();
+    if (!canvasRef.current) return;
+    e.target.setPointerCapture(e.pointerId);
 
     const rect = canvasRef.current.getBoundingClientRect();
-    const mouseXPercent = ((e.clientX - rect.left) / rect.width) * 100;
-    const mouseYPercent = ((e.clientY - rect.top) / rect.height) * 100;
+    const startX = ((e.clientX - rect.left) / rect.width) * 100;
+    const startY = ((e.clientY - rect.top) / rect.height) * 100;
+    
+    // Support legacy tables that might not have width/height yet
+    const config = tablePos[id];
+    // Fallback logic for legacy size calculation
+    const fallbackWidth = config.shape === 'rect' ? (10 + (config.capacity || 8)) : 14;
+    const fallbackHeight = config.shape === 'rect' ? 12 : 14; // Circle/Square aspect ratio approximation
+    
+    setResizeState({
+      id: id,
+      startX: startX,
+      startY: startY,
+      startW: config.width || fallbackWidth, 
+      startH: config.height || (config.shape === 'rect' ? 12 : fallbackWidth) // Use width for height if circle/square
+    });
+  };
 
-    let newX = mouseXPercent - dragState.offsetX;
-    let newY = mouseYPercent - dragState.offsetY;
+  // 3. MOVEMENT HANDLER (Handles both Drag & Resize)
+  const handlePointerMove = (e) => {
+    if (!canvasRef.current) return;
+    
+    // --- RESIZING LOGIC ---
+    if (resizeState) {
+        e.preventDefault();
+        const rect = canvasRef.current.getBoundingClientRect();
+        const currentX = ((e.clientX - rect.left) / rect.width) * 100;
+        const currentY = ((e.clientY - rect.top) / rect.height) * 100;
 
-    newX = Math.max(0, Math.min(100, newX));
-    newY = Math.max(0, Math.min(100, newY));
+        // Calculate Delta
+        const deltaX = currentX - resizeState.startX;
+        const deltaY = currentY - resizeState.startY;
 
-    setTablePos(prev => ({
-      ...prev,
-      [dragState.id]: { ...prev[dragState.id], x: newX, y: newY }
-    }));
+        // "Expand from Center" Logic: We multiply delta by 2 because x/y is the center point.
+        let newWidth = resizeState.startW + (deltaX * 2);
+        let newHeight = resizeState.startH + (deltaY * 2);
+
+        // Constraints
+        const config = tablePos[resizeState.id];
+        const isRect = config.shape === 'rect';
+
+        // Min/Max Limits
+        newWidth = Math.max(5, Math.min(50, newWidth));
+        newHeight = Math.max(5, Math.min(50, newHeight));
+
+        // Aspect Ratio Lock for Circle/Square
+        if (!isRect) {
+            // Use the larger dimension change to drive the size
+            const maxDimension = Math.max(newWidth, newHeight);
+            newWidth = maxDimension;
+            newHeight = maxDimension;
+        }
+
+        setTablePos(prev => ({
+            ...prev,
+            [resizeState.id]: { 
+                ...prev[resizeState.id], 
+                width: newWidth, 
+                height: newHeight 
+            }
+        }));
+        return;
+    }
+
+    // --- DRAGGING LOGIC ---
+    if (dragState) {
+        e.preventDefault();
+        const rect = canvasRef.current.getBoundingClientRect();
+        const mouseXPercent = ((e.clientX - rect.left) / rect.width) * 100;
+        const mouseYPercent = ((e.clientY - rect.top) / rect.height) * 100;
+
+        let newX = mouseXPercent - dragState.offsetX;
+        let newY = mouseYPercent - dragState.offsetY;
+
+        newX = Math.max(0, Math.min(100, newX));
+        newY = Math.max(0, Math.min(100, newY));
+
+        setTablePos(prev => ({
+            ...prev,
+            [dragState.id]: { ...prev[dragState.id], x: newX, y: newY }
+        }));
+    }
   };
 
   const handlePointerUp = (e) => {
     if (dragState) {
       e.target.releasePointerCapture(e.pointerId);
       setDragState(null);
+    }
+    if (resizeState) {
+      e.target.releasePointerCapture(e.pointerId);
+      setResizeState(null);
     }
   };
 
@@ -235,7 +303,6 @@ export default function SeatingPlanner() {
           ))}
         </div>
 
-        {/* Add Table Buttons */}
         <div className="mt-4 pt-4 border-t border-slate-800">
            <p className="text-[9px] font-bold text-slate-500 uppercase mb-2">Add New Table:</p>
            <div className="flex gap-2 mb-3">
@@ -252,7 +319,6 @@ export default function SeatingPlanner() {
       {/* STAGE */}
       <div className="flex-1 bg-slate-950 flex items-center justify-center p-8 overflow-hidden relative">
         <div className="absolute top-4 right-4 text-slate-700 text-[10px] font-mono pointer-events-none">FIXED RATIO 16:9</div>
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-slate-500 text-[10px] font-mono pointer-events-none animate-pulse">Right-click a table to edit</div>
 
         <div 
           ref={canvasRef} 
@@ -266,11 +332,17 @@ export default function SeatingPlanner() {
             const isSquare = config.shape === 'square';
             const isCircle = !isRect && !isSquare; 
             
-            // FIX: Robust Capacity Check
             const capacity = config.capacity || 8; 
             const seated = tables[id] || [];
             const isDragging = dragState?.id === id;
+            const isResizing = resizeState?.id === id;
             const isFull = seated.length >= capacity;
+
+            // Legacy Fallback for Width/Height if table was created in old version
+            const renderWidth = config.width ? `${config.width}%` : (isRect ? `${10 + capacity}%` : '14%');
+            const renderHeight = config.height ? `${config.height}%` : (isRect ? '12%' : 'auto');
+            const renderAspect = config.width ? (isRect ? 'auto' : '1/1') : (isRect ? 'auto' : '1/1');
+            // If legacy circular table doesn't have height calculated yet, auto aspect ratio handles it.
             
             return (
               <div 
@@ -288,20 +360,29 @@ export default function SeatingPlanner() {
                   left: `${config.x}%`, 
                   top: `${config.y}%`, 
                   transform: 'translate(-50%, -50%)', 
-                  width: isRect ? `${10 + (capacity)}%` : '14%', 
-                  height: isRect ? '12%' : 'auto', 
-                  aspectRatio: isRect ? 'auto' : '1 / 1',
+                  width: renderWidth, 
+                  height: renderHeight, 
+                  aspectRatio: renderAspect,
                   cursor: isDragging ? 'grabbing' : 'grab',
-                  zIndex: isDragging ? 50 : 10
+                  zIndex: isDragging || isResizing ? 50 : 10
                 }}
-                className={`absolute flex flex-col items-center justify-center p-2 border-[3px] transition-all select-none
+                className={`absolute flex flex-col items-center justify-center p-2 border-[3px] transition-shadow select-none group
                   ${isCircle ? 'rounded-full' : 'rounded-lg'} 
                   ${isFull ? 'border-red-600 bg-red-100 shadow-red-500/50 shadow-lg' : 'bg-white border-slate-300 shadow-md hover:border-indigo-400'}`}
               >
+                
+                {/* RESIZE HANDLE */}
+                <div 
+                   className="no-drag absolute bottom-0 right-0 w-4 h-4 cursor-se-resize flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-50"
+                   onPointerDown={(e) => handleResizePointerDown(e, id)}
+                >
+                    <div className="w-2.5 h-2.5 bg-indigo-500 rounded-sm border border-white shadow-sm"></div>
+                </div>
+
                 <span className={`text-[0.6rem] md:text-[0.7rem] font-black mb-1 pointer-events-none uppercase tracking-tighter ${isFull ? 'text-red-800' : 'text-slate-700'}`}>Table {id}</span>
-                <div className="grid grid-cols-2 gap-1 w-full pointer-events-none px-1">
+                <div className="grid grid-cols-2 gap-1 w-full pointer-events-none px-1 overflow-hidden">
                   {seated.map(g => (
-                    <div key={g} className="text-[0.4rem] md:text-[0.5rem] bg-slate-100 border border-slate-200 p-0.5 rounded truncate text-center font-bold text-slate-600">{g}</div>
+                    <div key={g} className="text-[0.35rem] md:text-[0.45rem] bg-slate-100 border border-slate-200 p-0.5 rounded truncate text-center font-bold text-slate-600">{g}</div>
                   ))}
                 </div>
               </div>
@@ -309,7 +390,7 @@ export default function SeatingPlanner() {
           })}
         </div>
 
-        {/* CUSTOM CONTEXT MENU */}
+        {/* CONTEXT MENU */}
         {contextMenu && (
           <div 
             className="fixed bg-slate-800 text-white p-2 rounded-xl shadow-2xl z-[100] border border-slate-700 min-w-[150px] flex flex-col gap-1"
@@ -317,13 +398,11 @@ export default function SeatingPlanner() {
             onClick={(e) => e.stopPropagation()}
           >
             <p className="text-[10px] font-bold text-slate-400 uppercase px-2 py-1 border-b border-slate-700 mb-1">Edit Table {contextMenu.tableId}</p>
-            
             <div className="flex gap-1 p-1">
                <button onClick={() => updateTableShape(contextMenu.tableId, 'circle')} className="flex-1 text-[9px] bg-slate-700 hover:bg-indigo-600 py-1 rounded">Circle</button>
                <button onClick={() => updateTableShape(contextMenu.tableId, 'square')} className="flex-1 text-[9px] bg-slate-700 hover:bg-indigo-600 py-1 rounded">Square</button>
                <button onClick={() => updateTableShape(contextMenu.tableId, 'rect')} className="flex-1 text-[9px] bg-slate-700 hover:bg-indigo-600 py-1 rounded">Rect</button>
             </div>
-
             <div className="flex items-center justify-between bg-slate-900 rounded p-1 mx-1">
                 <span className="text-[9px] text-slate-400 ml-1">Seats: {tablePos[contextMenu.tableId]?.capacity || 8}</span>
                 <div className="flex gap-1">
@@ -331,11 +410,9 @@ export default function SeatingPlanner() {
                     <button onClick={() => updateTableCapacity(contextMenu.tableId, 1)} className="text-[10px] bg-slate-700 hover:text-white px-2 rounded font-bold">+</button>
                 </div>
             </div>
-
             <button onClick={() => deleteTable(contextMenu.tableId)} className="text-[10px] text-red-300 hover:bg-red-900/50 hover:text-white py-1.5 rounded mt-1 font-bold">Delete Table</button>
           </div>
         )}
-
       </div>
     </div>
   );
