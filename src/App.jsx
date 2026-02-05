@@ -19,7 +19,7 @@ export default function SeatingPlanner() {
   const [tablePos, setTablePos] = useState({}); 
   const [dragState, setDragState] = useState(null); 
   
-  // New: Context Menu State
+  // Context Menu State
   const [contextMenu, setContextMenu] = useState(null); // { x, y, tableId }
 
   const canvasRef = useRef(null);
@@ -70,7 +70,7 @@ export default function SeatingPlanner() {
     }
   };
 
-  // UPDATED: Add Table with Shape Argument
+  // Add Table with Shape Argument
   const addTable = (shapeType) => {
     const nextId = Object.keys(tables).length + 1;
     setTables(prev => ({ ...prev, [nextId]: [] }));
@@ -86,7 +86,7 @@ export default function SeatingPlanner() {
 
   const updateTableCapacity = (id, delta) => {
     setTablePos(prev => {
-        const current = prev[id].capacity;
+        const current = prev[id].capacity || 8; // Default to 8 if missing
         const newCap = Math.max(2, Math.min(20, current + delta)); // Limit between 2 and 20
         return { ...prev, [id]: { ...prev[id], capacity: newCap } };
     });
@@ -113,7 +113,7 @@ export default function SeatingPlanner() {
 
   // --- INTERACTION HANDLERS ---
   const handleContextMenu = (e, id) => {
-    e.preventDefault(); // Prevent browser menu
+    e.preventDefault(); 
     e.stopPropagation();
     
     // Calculate position relative to viewport
@@ -235,7 +235,7 @@ export default function SeatingPlanner() {
           ))}
         </div>
 
-        {/* UPDATED: Add Table Buttons */}
+        {/* Add Table Buttons */}
         <div className="mt-4 pt-4 border-t border-slate-800">
            <p className="text-[9px] font-bold text-slate-500 uppercase mb-2">Add New Table:</p>
            <div className="flex gap-2 mb-3">
@@ -266,9 +266,11 @@ export default function SeatingPlanner() {
             const isSquare = config.shape === 'square';
             const isCircle = !isRect && !isSquare; 
             
+            // FIX: Robust Capacity Check
+            const capacity = config.capacity || 8; 
             const seated = tables[id] || [];
             const isDragging = dragState?.id === id;
-            const isFull = seated.length >= config.capacity;
+            const isFull = seated.length >= capacity;
             
             return (
               <div 
@@ -276,7 +278,7 @@ export default function SeatingPlanner() {
                 onPointerDown={(e) => handlePointerDown(e, id)}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
-                onContextMenu={(e) => handleContextMenu(e, id)} // RIGHT CLICK HANDLER
+                onContextMenu={(e) => handleContextMenu(e, id)}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
                   e.stopPropagation();
@@ -286,7 +288,7 @@ export default function SeatingPlanner() {
                   left: `${config.x}%`, 
                   top: `${config.y}%`, 
                   transform: 'translate(-50%, -50%)', 
-                  width: isRect ? `${10 + (config.capacity)}%` : '14%', 
+                  width: isRect ? `${10 + (capacity)}%` : '14%', 
                   height: isRect ? '12%' : 'auto', 
                   aspectRatio: isRect ? 'auto' : '1 / 1',
                   cursor: isDragging ? 'grabbing' : 'grab',
@@ -294,9 +296,9 @@ export default function SeatingPlanner() {
                 }}
                 className={`absolute flex flex-col items-center justify-center p-2 border-[3px] transition-all select-none
                   ${isCircle ? 'rounded-full' : 'rounded-lg'} 
-                  ${isFull ? 'border-red-500 bg-red-50 shadow-red-500/50 shadow-lg' : 'bg-white border-slate-300 shadow-md hover:border-indigo-400'}`}
+                  ${isFull ? 'border-red-600 bg-red-100 shadow-red-500/50 shadow-lg' : 'bg-white border-slate-300 shadow-md hover:border-indigo-400'}`}
               >
-                <span className={`text-[0.6rem] md:text-[0.7rem] font-black mb-1 pointer-events-none uppercase tracking-tighter ${isFull ? 'text-red-700' : 'text-slate-700'}`}>Table {id}</span>
+                <span className={`text-[0.6rem] md:text-[0.7rem] font-black mb-1 pointer-events-none uppercase tracking-tighter ${isFull ? 'text-red-800' : 'text-slate-700'}`}>Table {id}</span>
                 <div className="grid grid-cols-2 gap-1 w-full pointer-events-none px-1">
                   {seated.map(g => (
                     <div key={g} className="text-[0.4rem] md:text-[0.5rem] bg-slate-100 border border-slate-200 p-0.5 rounded truncate text-center font-bold text-slate-600">{g}</div>
@@ -323,7 +325,7 @@ export default function SeatingPlanner() {
             </div>
 
             <div className="flex items-center justify-between bg-slate-900 rounded p-1 mx-1">
-                <span className="text-[9px] text-slate-400 ml-1">Seats: {tablePos[contextMenu.tableId]?.capacity}</span>
+                <span className="text-[9px] text-slate-400 ml-1">Seats: {tablePos[contextMenu.tableId]?.capacity || 8}</span>
                 <div className="flex gap-1">
                     <button onClick={() => updateTableCapacity(contextMenu.tableId, -1)} className="text-[10px] bg-slate-700 hover:text-white px-2 rounded font-bold">-</button>
                     <button onClick={() => updateTableCapacity(contextMenu.tableId, 1)} className="text-[10px] bg-slate-700 hover:text-white px-2 rounded font-bold">+</button>
