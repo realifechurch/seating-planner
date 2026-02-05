@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import Papa from 'papaparse';
+import { toPng } from 'html-to-image';
+import { jsPDF } from 'jspdf';
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL, 
@@ -34,7 +36,6 @@ export default function SeatingPlanner() {
 
   useEffect(() => { if (session?.user?.id) fetchPlans(); }, [session]);
 
-  // Global click listener to close context menu
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
     window.addEventListener('click', handleClick);
@@ -70,16 +71,47 @@ export default function SeatingPlanner() {
     }
   };
 
-  // --- ACTIONS ---
+  // --- EXPORT FUNCTION ---
+  const exportToPDF = async () => {
+    if (!canvasRef.current) return;
 
-  // FIX: Initialize Defaults Correctly
+    try {
+      // 1. Capture the canvas as a high-quality PNG
+      const dataUrl = await toPng(canvasRef.current, { cacheBust: true, pixelRatio: 3 });
+      
+      // 2. Initialize PDF (Landscape A4)
+      const pdf = new jsPDF('l', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      // 3. Add Header Text
+      pdf.setFontSize(18);
+      pdf.text(planName || "Wedding Seating Plan", 10, 15);
+      pdf.setFontSize(10);
+      pdf.text(`Generated: ${new Date().toLocaleDateString()}`, 10, 22);
+
+      // 4. Calculate Ratio to fit image on page
+      const imgProps = pdf.getImageProperties(dataUrl);
+      const pdfWidth = pageWidth - 20; // 10mm margin each side
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+      // 5. Add Image to PDF
+      pdf.addImage(dataUrl, 'PNG', 10, 30, pdfWidth, pdfHeight);
+      
+      // 6. Save
+      pdf.save(`${planName || 'Seating_Plan'}.pdf`);
+    } catch (err) {
+      console.error("Export failed:", err);
+      alert("Could not generate PDF.");
+    }
+  };
+
+  // --- ACTIONS ---
   const addTable = (shapeType) => {
     const nextId = Object.keys(tables).length + 1;
     setTables(prev => ({ ...prev, [nextId]: [] }));
-    
-    // Default Sizes
-    const defaultWidth = shapeType === 'rect' ? 15 : 10; // Circles smaller width %
-    const defaultHeight = shapeType === 'rect' ? 15 : null; // Circles don't use height
+    const defaultWidth = shapeType === 'rect' ? 15 : 10; 
+    const defaultHeight = shapeType === 'rect' ? 15 : null; 
 
     setTablePos(prev => ({ 
       ...prev, 
@@ -113,26 +145,22 @@ export default function SeatingPlanner() {
     const newTables = { ...tables };
     delete newTables[id];
     setTables(newTables);
-
     const newTablePos = { ...tablePos };
     delete newTablePos[id];
     setTablePos(newTablePos);
   };
 
-  // --- INTERACTION HANDLERS ---
+  // --- POINTER LOGIC (Unchanged from prev version) ---
   const handleContextMenu = (e, id) => {
     e.preventDefault(); 
     e.stopPropagation();
     setContextMenu({ x: e.clientX, y: e.clientY, tableId: id });
   };
 
-  // 1. DRAG START
   const handlePointerDown = (e, id) => {
     if (e.target.closest('.no-drag')) return; 
     if (contextMenu) { setContextMenu(null); return; }
-    
-    e.preventDefault(); 
-    e.stopPropagation(); 
+    e.preventDefault(); e.stopPropagation(); 
     if (!canvasRef.current) return;
     e.target.setPointerCapture(e.pointerId);
 
@@ -148,81 +176,48 @@ export default function SeatingPlanner() {
     });
   };
 
-  // 2. RESIZE START
   const handleResizePointerDown = (e, id) => {
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     if (!canvasRef.current) return;
     e.target.setPointerCapture(e.pointerId);
-
     const rect = canvasRef.current.getBoundingClientRect();
     const startX = ((e.clientX - rect.left) / rect.width) * 100;
     const startY = ((e.clientY - rect.top) / rect.height) * 100;
-    
     const config = tablePos[id];
-    // Fallbacks
     const fallbackWidth = config.shape === 'rect' ? (10 + (config.capacity || 8)) : 10;
     const fallbackHeight = config.shape === 'rect' ? 12 : null; 
-    
-    setResizeState({
-      id: id,
-      startX: startX,
-      startY: startY,
-      startW: config.width || fallbackWidth, 
-      startH: config.height || fallbackHeight
-    });
+    setResizeState({ id, startX, startY, startW: config.width || fallbackWidth, startH: config.height || fallbackHeight });
   };
 
-  // 3. MOVEMENT HANDLER (Handles both Drag & Resize)
   const handlePointerMove = (e) => {
     if (!canvasRef.current) return;
     
-    // --- RESIZING LOGIC ---
     if (resizeState) {
         e.preventDefault();
         const rect = canvasRef.current.getBoundingClientRect();
-        const currentX = ((e.clientX - rect.left) / rect.width) * 100;
-        const currentY = ((e.clientY - rect.top) / rect.height) * 100;
-
-        const deltaX = currentX - resizeState.startX;
-        const deltaY = currentY - resizeState.startY;
-
+        const deltaX = (((e.clientX - rect.left) / rect.width) * 100) - resizeState.startX;
+        const deltaY = (((e.clientY - rect.top) / rect.height) * 100) - resizeState.startY;
+        
+        let newWidth = resizeState.startW + (deltaX * 2);
         const config = tablePos[resizeState.id];
         const isRect = config.shape === 'rect';
-
-        // Multiply by 2 because we resize from center
-        let newWidth = resizeState.startW + (deltaX * 2);
-        
-        // FIX: Only calculate height for Rectangles. 
-        // For Circle/Square, we ignore height calculation entirely.
         let newHeight = isRect ? (resizeState.startH + (deltaY * 2)) : null;
 
-        // Constraints
         newWidth = Math.max(5, Math.min(50, newWidth));
-        if (isRect) {
-            newHeight = Math.max(5, Math.min(50, newHeight));
-        }
+        if (isRect) newHeight = Math.max(5, Math.min(50, newHeight));
 
         setTablePos(prev => ({
             ...prev,
-            [resizeState.id]: { 
-                ...prev[resizeState.id], 
-                width: newWidth, 
-                height: newHeight 
-            }
+            [resizeState.id]: { ...prev[resizeState.id], width: newWidth, height: newHeight }
         }));
         return;
     }
 
-    // --- DRAGGING LOGIC ---
     if (dragState) {
         e.preventDefault();
         const rect = canvasRef.current.getBoundingClientRect();
-        const mouseXPercent = ((e.clientX - rect.left) / rect.width) * 100;
-        const mouseYPercent = ((e.clientY - rect.top) / rect.height) * 100;
-
-        let newX = mouseXPercent - dragState.offsetX;
-        let newY = mouseYPercent - dragState.offsetY;
+        let newX = (((e.clientX - rect.left) / rect.width) * 100) - dragState.offsetX;
+        let newY = (((e.clientY - rect.top) / rect.height) * 100) - dragState.offsetY;
 
         newX = Math.max(0, Math.min(100, newX));
         newY = Math.max(0, Math.min(100, newY));
@@ -235,23 +230,15 @@ export default function SeatingPlanner() {
   };
 
   const handlePointerUp = (e) => {
-    if (dragState) {
-      e.target.releasePointerCapture(e.pointerId);
-      setDragState(null);
-    }
-    if (resizeState) {
-      e.target.releasePointerCapture(e.pointerId);
-      setResizeState(null);
-    }
+    if (dragState) { e.target.releasePointerCapture(e.pointerId); setDragState(null); }
+    if (resizeState) { e.target.releasePointerCapture(e.pointerId); setResizeState(null); }
   };
 
   const moveGuest = (name, source, target) => {
     const targetCap = tablePos[target]?.capacity || 8;
     if (target !== 'sidebar' && (tables[target]?.length || 0) >= targetCap) return alert("Table is full!");
-    
     if (source === 'sidebar') setUnassigned(prev => prev.filter(n => n !== name));
     else setTables(prev => ({ ...prev, [source]: prev[source].filter(n => n !== name) }));
-
     if (target === 'sidebar') setUnassigned(prev => [...prev, name]);
     else setTables(prev => ({ ...prev, [target]: [...(prev[target] || []), name] }));
   };
@@ -262,7 +249,7 @@ export default function SeatingPlanner() {
     if (!error) { setCurrentPlanId(data[0].id); fetchPlans(); alert("Saved!"); }
   };
 
-  if (!session) return (
+  if (!session) return ( /* LOGIN UI */ 
     <div className="h-screen w-screen bg-slate-900 flex items-center justify-center text-white p-4">
       <form onSubmit={async (e) => { e.preventDefault(); await supabase.auth.signInWithPassword({ email, password }); }} className="bg-white/5 p-10 rounded-3xl border border-white/10 w-full max-w-md shadow-2xl">
         <h1 className="text-3xl font-serif mb-6 text-center italic">Wedding Dashboard</h1>
@@ -275,7 +262,6 @@ export default function SeatingPlanner() {
 
   return (
     <div className="flex h-screen w-screen bg-slate-950 text-slate-200 overflow-hidden font-sans">
-      
       {/* SIDEBAR */}
       <div className="w-80 bg-slate-900 p-5 flex flex-col border-r border-slate-800 z-20 shadow-2xl">
         <div className="flex justify-between items-center mb-4">
@@ -312,7 +298,14 @@ export default function SeatingPlanner() {
            </div>
            
            <input value={planName} onChange={e => setPlanName(e.target.value)} placeholder="Event Name..." className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-xs outline-none mb-2" />
-           <button onClick={saveToDashboard} className="w-full bg-emerald-600 p-2.5 rounded-xl font-bold text-xs uppercase hover:bg-emerald-500 transition shadow-lg">Save Layout</button>
+           <div className="flex gap-2">
+             <button onClick={saveToDashboard} className="flex-1 bg-emerald-600 p-2.5 rounded-xl font-bold text-xs uppercase hover:bg-emerald-500 transition shadow-lg">Save</button>
+             
+             {/* EXPORT BUTTON */}
+             <button onClick={exportToPDF} className="bg-slate-700 p-2.5 rounded-xl font-bold text-xs uppercase hover:bg-slate-600 transition shadow-lg text-slate-300">
+                Export PDF
+             </button>
+           </div>
         </div>
       </div>
 
@@ -329,17 +322,13 @@ export default function SeatingPlanner() {
         >
           {Object.entries(tablePos).map(([id, config]) => {
             const isRect = config.shape === 'rect';
-            const isSquare = config.shape === 'square';
-            const isCircle = !isRect && !isSquare; 
-            
+            const isCircle = !isRect && config.shape !== 'square';
             const capacity = config.capacity || 8; 
             const seated = tables[id] || [];
             const isDragging = dragState?.id === id;
+            const isResizing = resizeState?.id === id;
             const isFull = seated.length >= capacity;
 
-            // FIX: Render Logic
-            // If it's a Rectangle, use both width and height.
-            // If it's a Circle/Square, use width, FORCE height to auto, FORCE aspect-ratio 1/1
             const renderWidth = config.width ? `${config.width}%` : '14%';
             const renderHeight = isRect ? (config.height ? `${config.height}%` : '12%') : 'auto';
             const renderAspect = isRect ? 'auto' : '1 / 1';
@@ -352,37 +341,23 @@ export default function SeatingPlanner() {
                 onPointerUp={handlePointerUp}
                 onContextMenu={(e) => handleContextMenu(e, id)}
                 onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.stopPropagation();
-                  if (window.draggedGuest) moveGuest(window.draggedGuest, window.draggedSource, id);
-                }}
+                onDrop={(e) => { e.stopPropagation(); if (window.draggedGuest) moveGuest(window.draggedGuest, window.draggedSource, id); }}
                 style={{ 
-                  left: `${config.x}%`, 
-                  top: `${config.y}%`, 
-                  transform: 'translate(-50%, -50%)', 
-                  width: renderWidth, 
-                  height: renderHeight, 
-                  aspectRatio: renderAspect,
-                  cursor: isDragging ? 'grabbing' : 'grab',
-                  zIndex: isDragging ? 50 : 10
+                  left: `${config.x}%`, top: `${config.y}%`, transform: 'translate(-50%, -50%)', 
+                  width: renderWidth, height: renderHeight, aspectRatio: renderAspect,
+                  cursor: isDragging ? 'grabbing' : 'grab', zIndex: isDragging || isResizing ? 50 : 10
                 }}
                 className={`absolute flex flex-col items-center justify-center p-2 border-[3px] transition-shadow select-none group
                   ${isCircle ? 'rounded-full' : 'rounded-lg'} 
                   ${isFull ? 'border-red-600 bg-red-100 shadow-red-500/50 shadow-lg' : 'bg-white border-slate-300 shadow-md hover:border-indigo-400'}`}
               >
-                {/* RESIZE HANDLE */}
-                <div 
-                   className="no-drag absolute bottom-0 right-0 w-6 h-6 cursor-se-resize flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-50"
-                   onPointerDown={(e) => handleResizePointerDown(e, id)}
-                >
+                <div className="no-drag absolute bottom-0 right-0 w-6 h-6 cursor-se-resize flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-50"
+                   onPointerDown={(e) => handleResizePointerDown(e, id)}>
                     <div className="w-2.5 h-2.5 bg-indigo-500 rounded-sm border border-white shadow-sm"></div>
                 </div>
-
                 <span className={`text-[0.6rem] md:text-[0.7rem] font-black mb-1 pointer-events-none uppercase tracking-tighter ${isFull ? 'text-red-800' : 'text-slate-700'}`}>Table {id}</span>
                 <div className="grid grid-cols-2 gap-1 w-full pointer-events-none px-1 overflow-hidden">
-                  {seated.map(g => (
-                    <div key={g} className="text-[0.35rem] md:text-[0.45rem] bg-slate-100 border border-slate-200 p-0.5 rounded truncate text-center font-bold text-slate-600">{g}</div>
-                  ))}
+                  {seated.map(g => <div key={g} className="text-[0.35rem] md:text-[0.45rem] bg-slate-100 border border-slate-200 p-0.5 rounded truncate text-center font-bold text-slate-600">{g}</div>)}
                 </div>
               </div>
             );
@@ -391,11 +366,8 @@ export default function SeatingPlanner() {
 
         {/* CONTEXT MENU */}
         {contextMenu && (
-          <div 
-            className="fixed bg-slate-800 text-white p-2 rounded-xl shadow-2xl z-[100] border border-slate-700 min-w-[150px] flex flex-col gap-1"
-            style={{ left: contextMenu.x, top: contextMenu.y }}
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="fixed bg-slate-800 text-white p-2 rounded-xl shadow-2xl z-[100] border border-slate-700 min-w-[150px] flex flex-col gap-1"
+               style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(e) => e.stopPropagation()}>
             <p className="text-[10px] font-bold text-slate-400 uppercase px-2 py-1 border-b border-slate-700 mb-1">Edit Table {contextMenu.tableId}</p>
             <div className="flex gap-1 p-1">
                <button onClick={() => updateTableShape(contextMenu.tableId, 'circle')} className="flex-1 text-[9px] bg-slate-700 hover:bg-indigo-600 py-1 rounded">Circle</button>
