@@ -1,7 +1,3 @@
-// Fix export
-import React from 'react';
-// ... rest of file
-
 import React from 'react';
 
 // Sleek Icons
