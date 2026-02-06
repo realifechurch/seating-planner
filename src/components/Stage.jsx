@@ -1,11 +1,11 @@
 import React from 'react';
-// IMPORT ATOMS
-import DiningTable from './stage_atoms/DiningTable';
-import DecorItem from './stage_atoms/DecorItem';
+// IMPORT ATOMS (Flat structure)
+import DiningTable from './TableNode'; // Filename is TableNode.jsx
+import DecorItem from './DecorItem';
 
 export default function Stage({
   canvasRef,
-  tablePos, tables, 
+  tablePos, tables,
   selectedTableId, dragState, resizeState,
   handlePointerDown, handlePointerMove, handlePointerUp,
   handleResizePointerDown,
