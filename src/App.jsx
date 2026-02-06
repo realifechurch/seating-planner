@@ -24,9 +24,7 @@ export default function SeatingPlanner() {
   const [unassigned, setUnassigned] = useState([]); 
   const [tables, setTables] = useState({}); 
   const [tablePos, setTablePos] = useState({}); 
-  
-  // FEATURE 3: Conflicts State
-  const [conflicts, setConflicts] = useState([]); // [{ id, guest1Id, guest2Id, name1, name2 }]
+  const [conflicts, setConflicts] = useState([]); // Rules for who can't sit together
 
   const [selectedTableId, setSelectedTableId] = useState(null);
   const [dragState, setDragState] = useState(null); 
@@ -66,17 +64,18 @@ export default function SeatingPlanner() {
     setPlanName(p.name);
     setCurrentPlanId(p.id);
     
-    // Normalization
+    // Helper to ensure guest objects are valid
     const normalizeGuests = (list) => list.map(g => (typeof g === 'string' ? { id: crypto.randomUUID(), name: g, group: 'None', meal: 'Standard', diet: '' } : g));
 
     setUnassigned(normalizeGuests(p.data.unassigned || []));
+    
     const loadedTables = p.data.tables || {};
     const normalizedTables = {};
     Object.keys(loadedTables).forEach(key => { normalizedTables[key] = normalizeGuests(loadedTables[key]); });
 
     setTables(normalizedTables);
     setTablePos(p.data.tablePos || {});
-    setConflicts(p.data.conflicts || []); // Load conflicts
+    setConflicts(p.data.conflicts || []); 
     setSelectedTableId(null);
   };
 
@@ -91,7 +90,7 @@ export default function SeatingPlanner() {
     const nameToUse = asNewVersion ? `${planName} (Copy)` : planName;
     const { data, error } = await supabase.from('seating_plans').upsert({ 
       id: idToUse, name: nameToUse, 
-      data: { unassigned, tables, tablePos, conflicts }, // Save conflicts
+      data: { unassigned, tables, tablePos, conflicts }, 
       user_id: session.user.id 
     }).select();
     if (!error) { 
@@ -100,7 +99,7 @@ export default function SeatingPlanner() {
     }
   };
 
-  // --- FEATURE 4: SMART CSV MERGE ---
+  // --- SMART CSV MERGE ---
   const handleSmartFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -110,8 +109,6 @@ export default function SeatingPlanner() {
         skipEmptyLines: true, 
         complete: (results) => {
             const csvRows = results.data.filter(row => row.Name || Object.values(row)[0]);
-            
-            // 1. Create Map of New Data
             const incomingDataMap = new Map();
             csvRows.forEach(row => {
                 const name = row.Name || Object.values(row)[0];
@@ -123,27 +120,17 @@ export default function SeatingPlanner() {
                 });
             });
 
-            // 2. Update UNASSIGNED List
-            // Keep guest if in CSV (update meta), Remove if not, Add if new
             let newUnassigned = unassigned
-                .filter(g => incomingDataMap.has(g.name)) // Remove deleted
-                .map(g => {
-                    const newData = incomingDataMap.get(g.name);
-                    return { ...g, ...newData }; // Update existing
-                });
+                .filter(g => incomingDataMap.has(g.name))
+                .map(g => ({ ...g, ...incomingDataMap.get(g.name) }));
 
-            // 3. Update TABLES
             const newTables = {};
             Object.keys(tables).forEach(tableId => {
                 newTables[tableId] = tables[tableId]
-                    .filter(g => incomingDataMap.has(g.name)) // Remove deleted (seated)
-                    .map(g => {
-                        const newData = incomingDataMap.get(g.name);
-                        return { ...g, ...newData }; // Update existing (seated)
-                    });
+                    .filter(g => incomingDataMap.has(g.name))
+                    .map(g => ({ ...g, ...incomingDataMap.get(g.name) }));
             });
 
-            // 4. Identify NEW guests (not in unassigned AND not in tables)
             const allCurrentNames = new Set([
                 ...unassigned.map(g => g.name),
                 ...Object.values(tables).flat().map(g => g.name)
@@ -157,19 +144,18 @@ export default function SeatingPlanner() {
 
             setUnassigned(newUnassigned);
             setTables(newTables);
-            alert("Smart Merge Complete: Guests updated.");
+            alert("Smart Merge Complete.");
         }
     });
   };
 
-  // --- FEATURE 3: CONFLICT LOGIC ---
+  // --- CONFLICT LOGIC ---
   const addConflict = (guestA, guestB) => {
-    // Check if already exists
     const exists = conflicts.find(c => 
         (c.guest1Id === guestA.id && c.guest2Id === guestB.id) || 
         (c.guest1Id === guestB.id && c.guest2Id === guestA.id)
     );
-    if (exists) return alert("Conflict already marked.");
+    if (exists) return alert("Rule already exists.");
 
     setConflicts(prev => [...prev, {
         id: crypto.randomUUID(),
@@ -184,20 +170,15 @@ export default function SeatingPlanner() {
     setConflicts(prev => prev.filter(c => c.id !== conflictId));
   };
 
-  // CALCULATE CONFLICTING TABLES
-  // Runs on every render to pass down visual status
+  // Calculate tables with conflicts for visual feedback
   const conflictTableIds = Object.entries(tables).reduce((acc, [tableId, guests]) => {
       const guestIdsOnTable = new Set(guests.map(g => g.id));
-      
-      const hasConflict = conflicts.some(c => 
-          guestIdsOnTable.has(c.guest1Id) && guestIdsOnTable.has(c.guest2Id)
-      );
-
+      const hasConflict = conflicts.some(c => guestIdsOnTable.has(c.guest1Id) && guestIdsOnTable.has(c.guest2Id));
       if (hasConflict) acc.push(tableId);
       return acc;
   }, []);
 
-  // --- GUEST DATA UTILS ---
+  // --- GUEST UTILS ---
   const updateGuestDetails = (id, updates) => {
     const inUnassigned = unassigned.find(g => g.id === id);
     if (inUnassigned) {
@@ -215,12 +196,13 @@ export default function SeatingPlanner() {
     }
   };
 
+  // --- AUTO ASSIGN ---
   const autoAssignGroup = (groupName, startTableId) => {
     const validTableIds = Object.keys(tables).filter(id => (tablePos[id]?.capacity || 0) > 0);
     if (validTableIds.length === 0) return alert("No tables available!");
 
     const guestsToAssign = unassigned.filter(g => g.group === groupName);
-    if (guestsToAssign.length === 0) return alert("No unassigned guests in that group.");
+    if (guestsToAssign.length === 0) return alert("No guests in that group.");
 
     const sortedTableIds = validTableIds.map(Number).sort((a,b) => a - b);
     let currentTableIndex = sortedTableIds.indexOf(Number(startTableId));
@@ -260,9 +242,10 @@ export default function SeatingPlanner() {
     if (source === 'sidebar') guestObj = unassigned.find(g => g.name === guestName);
     else guestObj = tables[source]?.find(g => g.name === guestName);
 
+    // Fallback if data is missing
     if (!guestObj) guestObj = { id: crypto.randomUUID(), name: guestName, group: 'None', meal: 'Standard', diet: '' };
 
-    if (tablePos[target]?.capacity === 0) return;
+    if (tablePos[target]?.capacity === 0) return; // Cannot drop on decor
     const targetCap = tablePos[target]?.capacity || 8;
     if (target !== 'sidebar' && (tables[target]?.length || 0) >= targetCap) return alert("Table is full!");
 
@@ -273,7 +256,7 @@ export default function SeatingPlanner() {
     else setTables(prev => ({ ...prev, [target]: [...(prev[target] || []), guestObj] }));
   };
 
-  // --- TABLE LOGIC ---
+  // --- ADD ITEMS ---
   const addTable = (shapeType) => {
     const nextId = Object.keys(tables).length + 1;
     setTables(prev => ({ ...prev, [nextId]: [] }));
@@ -314,6 +297,7 @@ export default function SeatingPlanner() {
     setSelectedTableId(null);
   };
 
+  // --- POINTER EVENTS ---
   const handlePointerDown = (e, id) => {
     if (e.target.closest('.no-drag')) return; 
     setSelectedTableId(id); e.preventDefault(); e.stopPropagation(); 
@@ -382,7 +366,8 @@ export default function SeatingPlanner() {
 
   if (!session) return <Auth supabase={supabase} />;
 
-  // Derived: ALL GUESTS (Sidebar + Seated) for Conflict Selectors
+  // --- CALCULATE ALL GUESTS FOR SIDEBAR DROPDOWNS ---
+  // This was missing before, causing the crash!
   const allGuests = [
       ...unassigned,
       ...Object.values(tables).flat()
@@ -395,11 +380,11 @@ export default function SeatingPlanner() {
         plans={plans} loadPlan={loadPlan} currentPlanId={currentPlanId}
         planName={planName} setPlanName={setPlanName}
         savePlan={savePlan} exportToPDF={exportToPDF} handleLogout={handleLogout}
-        userEmail={session.user.email} handleFileUpload={handleSmartFileUpload} // UPDATED
+        userEmail={session.user.email} handleFileUpload={handleSmartFileUpload}
         tables={tables} autoAssignGroup={autoAssignGroup} addDecor={addDecor}
         updateGuestDetails={updateGuestDetails}
-        conflicts={conflicts} addConflict={addConflict} removeConflict={removeConflict} // NEW PROPS
-        allGuests={allGuests} // NEW PROP
+        conflicts={conflicts} addConflict={addConflict} removeConflict={removeConflict}
+        allGuests={allGuests} // <--- PASSING THE MISSING PROP
       />
       <Stage 
         canvasRef={canvasRef}
@@ -410,7 +395,7 @@ export default function SeatingPlanner() {
         moveGuest={moveGuest}
         addTable={addTable} updateTableShape={updateTableShape} 
         updateTableCapacity={updateTableCapacity} deleteTable={deleteTable}
-        conflictTableIds={conflictTableIds} // NEW PROP
+        conflictTableIds={conflictTableIds}
       />
     </div>
   );
