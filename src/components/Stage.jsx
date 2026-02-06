@@ -13,12 +13,11 @@ export default function Stage({
   handlePointerDown, handlePointerMove, handlePointerUp,
   handleResizePointerDown,
   moveGuest,
-  addTable, updateTableShape, updateTableCapacity, deleteTable
+  addTable, updateTableShape, updateTableCapacity, deleteTable,
+  conflictTableIds // NEW PROP
 }) {
   
-  // Helper to determine dietary icon
   const getDietIcon = (guest) => {
-    // If guest is just a string (legacy), no icon
     if (typeof guest !== 'object' || !guest.diet) return null;
     const diet = guest.diet.toLowerCase();
     if (diet.includes('veg') || diet.includes('plant')) return <span className="text-[8px] ml-0.5">🍃</span>;
@@ -49,6 +48,9 @@ export default function Stage({
           const isResizing = resizeState?.id === id;
           const isSelected = selectedTableId === id;
           const isFull = isTable && seated.length >= capacity;
+          
+          // CONFLICT LOGIC: Check if this table ID is in the conflict list
+          const hasConflict = conflictTableIds.includes(id);
 
           const renderWidth = config.width ? `${config.width}%` : '14%';
           const renderHeight = isRect ? (config.height ? `${config.height}%` : '12%') : 'auto';
@@ -64,7 +66,12 @@ export default function Stage({
           else if (type === 'plant') { bgClass = 'bg-emerald-600'; borderClass = 'border-emerald-700'; textClass = 'text-transparent'; } 
           else if (type === 'dj') { bgClass = 'bg-fuchsia-900'; borderClass = 'border-fuchsia-700'; textClass = 'text-fuchsia-100'; } 
           else if (isTable) {
-             if (isSelected) borderClass = 'border-indigo-500 ring-4 ring-indigo-500/20';
+             if (hasConflict) { 
+                 borderClass = 'border-red-600 border-4 animate-pulse'; // STRONG WARNING VISUAL
+                 bgClass = 'bg-red-100'; 
+                 textClass = 'text-red-900 font-black';
+             }
+             else if (isSelected) borderClass = 'border-indigo-500 ring-4 ring-indigo-500/20';
              else if (isFull) { borderClass = 'border-red-500'; bgClass = 'bg-red-50'; textClass = 'text-red-800'; }
              else { bgClass = 'bg-white'; borderClass = 'border-slate-300'; }
           }
@@ -86,7 +93,13 @@ export default function Stage({
                   ${isCircle ? 'rounded-full' : 'rounded-lg'} ${bgClass} ${borderClass} ${shadowClass}`}
               >
                 {isSelected && <div className="no-drag absolute bottom-0 right-0 w-6 h-6 cursor-se-resize flex items-center justify-center z-50" onPointerDown={(e) => handleResizePointerDown(e, id)}><div className="w-3 h-3 bg-indigo-500 rounded-sm border border-white shadow-sm"></div></div>}
-                <span className={`text-[0.6rem] font-black mb-1 pointer-events-none uppercase tracking-tighter ${textClass}`}>{type === 'table' ? `Table ${id}` : type.toUpperCase()}</span>
+                
+                {/* Visual Label */}
+                <div className="flex items-center gap-1">
+                    {hasConflict && <span className="text-[10px]">⚠️</span>}
+                    <span className={`text-[0.6rem] font-black mb-1 pointer-events-none uppercase tracking-tighter ${textClass}`}>{type === 'table' ? `Table ${id}` : type.toUpperCase()}</span>
+                </div>
+
                 {isTable && (
                     <div className="grid grid-cols-2 gap-0.5 w-full pointer-events-none px-1 overflow-hidden">
                     {seated.map((g, i) => {

@@ -21,9 +21,12 @@ export default function SeatingPlanner() {
   const [currentPlanId, setCurrentPlanId] = useState(null);
   const [planName, setPlanName] = useState("");
   
-  const [unassigned, setUnassigned] = useState([]); // [{id, name, group, meal, diet}]
-  const [tables, setTables] = useState({}); // { 1: [ {id, name...}, {id, name...} ] }
+  const [unassigned, setUnassigned] = useState([]); 
+  const [tables, setTables] = useState({}); 
   const [tablePos, setTablePos] = useState({}); 
+  
+  // FEATURE 3: Conflicts State
+  const [conflicts, setConflicts] = useState([]); // [{ id, guest1Id, guest2Id, name1, name2 }]
 
   const [selectedTableId, setSelectedTableId] = useState(null);
   const [dragState, setDragState] = useState(null); 
@@ -63,28 +66,23 @@ export default function SeatingPlanner() {
     setPlanName(p.name);
     setCurrentPlanId(p.id);
     
-    // Normalization: Ensure guests are objects, not strings (Legacy Support)
-    const normalizeGuests = (list) => {
-        return list.map(g => (typeof g === 'string' ? { id: crypto.randomUUID(), name: g, group: 'None' } : g));
-    };
+    // Normalization
+    const normalizeGuests = (list) => list.map(g => (typeof g === 'string' ? { id: crypto.randomUUID(), name: g, group: 'None', meal: 'Standard', diet: '' } : g));
 
     setUnassigned(normalizeGuests(p.data.unassigned || []));
-    
-    // Normalize Tables
     const loadedTables = p.data.tables || {};
     const normalizedTables = {};
-    Object.keys(loadedTables).forEach(key => {
-        normalizedTables[key] = normalizeGuests(loadedTables[key]);
-    });
+    Object.keys(loadedTables).forEach(key => { normalizedTables[key] = normalizeGuests(loadedTables[key]); });
 
     setTables(normalizedTables);
     setTablePos(p.data.tablePos || {});
+    setConflicts(p.data.conflicts || []); // Load conflicts
     setSelectedTableId(null);
   };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    setSession(null); setTables({}); setTablePos({}); setUnassigned([]); setPlanName("");
+    setSession(null); setTables({}); setTablePos({}); setUnassigned([]); setPlanName(""); setConflicts([]);
   };
 
   const savePlan = async (asNewVersion = false) => {
@@ -92,7 +90,9 @@ export default function SeatingPlanner() {
     const idToUse = asNewVersion ? null : currentPlanId;
     const nameToUse = asNewVersion ? `${planName} (Copy)` : planName;
     const { data, error } = await supabase.from('seating_plans').upsert({ 
-      id: idToUse, name: nameToUse, data: { unassigned, tables, tablePos }, user_id: session.user.id 
+      id: idToUse, name: nameToUse, 
+      data: { unassigned, tables, tablePos, conflicts }, // Save conflicts
+      user_id: session.user.id 
     }).select();
     if (!error) { 
       setCurrentPlanId(data[0].id); if (asNewVersion) setPlanName(nameToUse);
@@ -100,18 +100,110 @@ export default function SeatingPlanner() {
     }
   };
 
-  // --- GUEST DATA MANAGEMENT ---
-  
-  // NEW: Update Guest Metadata (Meal/Diet)
+  // --- FEATURE 4: SMART CSV MERGE ---
+  const handleSmartFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    Papa.parse(file, { 
+        header: true, 
+        skipEmptyLines: true, 
+        complete: (results) => {
+            const csvRows = results.data.filter(row => row.Name || Object.values(row)[0]);
+            
+            // 1. Create Map of New Data
+            const incomingDataMap = new Map();
+            csvRows.forEach(row => {
+                const name = row.Name || Object.values(row)[0];
+                incomingDataMap.set(name, {
+                    name: name,
+                    group: row.Group || 'None',
+                    meal: row.Meal || 'Standard',
+                    diet: row.Diet || ''
+                });
+            });
+
+            // 2. Update UNASSIGNED List
+            // Keep guest if in CSV (update meta), Remove if not, Add if new
+            let newUnassigned = unassigned
+                .filter(g => incomingDataMap.has(g.name)) // Remove deleted
+                .map(g => {
+                    const newData = incomingDataMap.get(g.name);
+                    return { ...g, ...newData }; // Update existing
+                });
+
+            // 3. Update TABLES
+            const newTables = {};
+            Object.keys(tables).forEach(tableId => {
+                newTables[tableId] = tables[tableId]
+                    .filter(g => incomingDataMap.has(g.name)) // Remove deleted (seated)
+                    .map(g => {
+                        const newData = incomingDataMap.get(g.name);
+                        return { ...g, ...newData }; // Update existing (seated)
+                    });
+            });
+
+            // 4. Identify NEW guests (not in unassigned AND not in tables)
+            const allCurrentNames = new Set([
+                ...unassigned.map(g => g.name),
+                ...Object.values(tables).flat().map(g => g.name)
+            ]);
+
+            incomingDataMap.forEach((data, name) => {
+                if (!allCurrentNames.has(name)) {
+                    newUnassigned.push({ id: crypto.randomUUID(), ...data });
+                }
+            });
+
+            setUnassigned(newUnassigned);
+            setTables(newTables);
+            alert("Smart Merge Complete: Guests updated.");
+        }
+    });
+  };
+
+  // --- FEATURE 3: CONFLICT LOGIC ---
+  const addConflict = (guestA, guestB) => {
+    // Check if already exists
+    const exists = conflicts.find(c => 
+        (c.guest1Id === guestA.id && c.guest2Id === guestB.id) || 
+        (c.guest1Id === guestB.id && c.guest2Id === guestA.id)
+    );
+    if (exists) return alert("Conflict already marked.");
+
+    setConflicts(prev => [...prev, {
+        id: crypto.randomUUID(),
+        guest1Id: guestA.id,
+        guest2Id: guestB.id,
+        name1: guestA.name,
+        name2: guestB.name
+    }]);
+  };
+
+  const removeConflict = (conflictId) => {
+    setConflicts(prev => prev.filter(c => c.id !== conflictId));
+  };
+
+  // CALCULATE CONFLICTING TABLES
+  // Runs on every render to pass down visual status
+  const conflictTableIds = Object.entries(tables).reduce((acc, [tableId, guests]) => {
+      const guestIdsOnTable = new Set(guests.map(g => g.id));
+      
+      const hasConflict = conflicts.some(c => 
+          guestIdsOnTable.has(c.guest1Id) && guestIdsOnTable.has(c.guest2Id)
+      );
+
+      if (hasConflict) acc.push(tableId);
+      return acc;
+  }, []);
+
+  // --- GUEST DATA UTILS ---
   const updateGuestDetails = (id, updates) => {
-    // Check Unassigned
     const inUnassigned = unassigned.find(g => g.id === id);
     if (inUnassigned) {
         setUnassigned(prev => prev.map(g => g.id === id ? { ...g, ...updates } : g));
         return;
     }
-
-    // Check Tables
     for (const [tableId, guests] of Object.entries(tables)) {
         if (guests.find(g => g.id === id)) {
             setTables(prev => ({
@@ -120,19 +212,6 @@ export default function SeatingPlanner() {
             }));
             return;
         }
-    }
-  };
-
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      Papa.parse(file, { header: true, skipEmptyLines: true, complete: (results) => {
-          const imported = results.data.map(row => {
-            const name = row.Name || Object.values(row)[0];
-            return name ? { id: crypto.randomUUID(), name, group: 'None', meal: 'Standard', diet: '' } : null;
-          }).filter(Boolean);
-          setUnassigned(prev => [...new Set([...prev, ...imported])]);
-      }});
     }
   };
 
@@ -163,7 +242,6 @@ export default function SeatingPlanner() {
 
         if (spaceAvailable > 0) {
             const moving = guestsRemaining.slice(0, spaceAvailable);
-            // Push OBJECTS not strings
             newTables[currentTableId] = [...currentSeated, ...moving];
             moving.forEach(g => guestIdsAssigned.add(g.id));
             guestsRemaining = guestsRemaining.slice(spaceAvailable);
@@ -174,41 +252,25 @@ export default function SeatingPlanner() {
     setUnassigned(prev => prev.filter(g => !guestIdsAssigned.has(g.id)));
   };
 
-  // --- MOVE LOGIC (UPDATED FOR METADATA) ---
+  // --- MOVE LOGIC ---
   const moveGuest = (guestObjOrName, source, target) => {
-    // 1. Identify Guest Object
     let guestObj = null;
     const guestName = typeof guestObjOrName === 'string' ? guestObjOrName : guestObjOrName.name;
 
-    // Find the full object from source to preserve metadata (Meal/Diet)
-    if (source === 'sidebar') {
-        guestObj = unassigned.find(g => g.name === guestName);
-    } else {
-        guestObj = tables[source]?.find(g => g.name === guestName);
-    }
+    if (source === 'sidebar') guestObj = unassigned.find(g => g.name === guestName);
+    else guestObj = tables[source]?.find(g => g.name === guestName);
 
-    // Fallback if not found (Legacy string case)
-    if (!guestObj) guestObj = { id: crypto.randomUUID(), name: guestName, group: 'None' };
+    if (!guestObj) guestObj = { id: crypto.randomUUID(), name: guestName, group: 'None', meal: 'Standard', diet: '' };
 
-    // Reject drops on decor
     if (tablePos[target]?.capacity === 0) return;
-
     const targetCap = tablePos[target]?.capacity || 8;
     if (target !== 'sidebar' && (tables[target]?.length || 0) >= targetCap) return alert("Table is full!");
 
-    // Remove from Source
-    if (source === 'sidebar') {
-        setUnassigned(prev => prev.filter(g => g.name !== guestName));
-    } else {
-        setTables(prev => ({ ...prev, [source]: prev[source].filter(g => (typeof g === 'string' ? g : g.name) !== guestName) }));
-    }
+    if (source === 'sidebar') setUnassigned(prev => prev.filter(g => g.name !== guestName));
+    else setTables(prev => ({ ...prev, [source]: prev[source].filter(g => (typeof g === 'string' ? g : g.name) !== guestName) }));
 
-    // Add to Target (Always as Object)
-    if (target === 'sidebar') {
-        setUnassigned(prev => [...prev, guestObj]);
-    } else {
-        setTables(prev => ({ ...prev, [target]: [...(prev[target] || []), guestObj] }));
-    }
+    if (target === 'sidebar') setUnassigned(prev => [...prev, guestObj]);
+    else setTables(prev => ({ ...prev, [target]: [...(prev[target] || []), guestObj] }));
   };
 
   // --- TABLE LOGIC ---
@@ -234,7 +296,6 @@ export default function SeatingPlanner() {
   };
 
   const updateTableShape = (id, newShape) => setTablePos(prev => ({ ...prev, [id]: { ...prev[id], shape: newShape } }));
-  
   const updateTableCapacity = (id, delta) => setTablePos(prev => {
       if (prev[id].type !== 'table' && prev[id].type !== undefined) return prev;
       const current = prev[id].capacity || 8;
@@ -245,7 +306,6 @@ export default function SeatingPlanner() {
   const deleteTable = (id) => {
     const guestsAtTable = tables[id] || [];
     if (guestsAtTable.length > 0) {
-        // Ensure rescued guests are objects
         const rescued = guestsAtTable.map(g => (typeof g === 'string' ? { id: crypto.randomUUID(), name: g, group: 'None' } : g));
         setUnassigned(prev => [...prev, ...rescued]);
     }
@@ -322,6 +382,12 @@ export default function SeatingPlanner() {
 
   if (!session) return <Auth supabase={supabase} />;
 
+  // Derived: ALL GUESTS (Sidebar + Seated) for Conflict Selectors
+  const allGuests = [
+      ...unassigned,
+      ...Object.values(tables).flat()
+  ].sort((a,b) => a.name.localeCompare(b.name));
+
   return (
     <div className="flex h-screen w-screen bg-slate-950 text-slate-200 overflow-hidden font-sans">
       <Sidebar 
@@ -329,9 +395,11 @@ export default function SeatingPlanner() {
         plans={plans} loadPlan={loadPlan} currentPlanId={currentPlanId}
         planName={planName} setPlanName={setPlanName}
         savePlan={savePlan} exportToPDF={exportToPDF} handleLogout={handleLogout}
-        userEmail={session.user.email} handleFileUpload={handleFileUpload}
+        userEmail={session.user.email} handleFileUpload={handleSmartFileUpload} // UPDATED
         tables={tables} autoAssignGroup={autoAssignGroup} addDecor={addDecor}
-        updateGuestDetails={updateGuestDetails} // NEW PROP
+        updateGuestDetails={updateGuestDetails}
+        conflicts={conflicts} addConflict={addConflict} removeConflict={removeConflict} // NEW PROPS
+        allGuests={allGuests} // NEW PROP
       />
       <Stage 
         canvasRef={canvasRef}
@@ -342,6 +410,7 @@ export default function SeatingPlanner() {
         moveGuest={moveGuest}
         addTable={addTable} updateTableShape={updateTableShape} 
         updateTableCapacity={updateTableCapacity} deleteTable={deleteTable}
+        conflictTableIds={conflictTableIds} // NEW PROP
       />
     </div>
   );
