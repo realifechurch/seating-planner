@@ -1,7 +1,3 @@
-// Fix export
-import React from 'react';
-// ... rest of file
-
 import React from 'react';
 import GuestChair from './GuestChair';
 
@@ -22,17 +18,17 @@ export default function DiningTable({
   let containerClass = "w-full h-full flex flex-col items-center justify-center p-1.5 transition-all duration-300 ease-out select-none relative ";
   
   if (config.shape === 'circle') containerClass += "rounded-full ";
-  else containerClass += "rounded-xl "; // Apple prefers 'squircle' or softer radii
+  else containerClass += "rounded-xl "; 
 
   // State Visuals
   if (hasConflict) {
-    containerClass += "bg-red-50 ring-2 ring-red-400 shadow-lg shadow-red-100 "; // Error state
+    containerClass += "bg-red-50 ring-2 ring-red-400 shadow-lg shadow-red-100 "; 
   } else if (isSelected) {
-    containerClass += "bg-white ring-2 ring-indigo-500 shadow-xl scale-[1.02] z-50 "; // Active state
+    containerClass += "bg-white ring-2 ring-indigo-500 shadow-xl scale-[1.02] z-50 "; 
   } else if (isFull) {
-    containerClass += "bg-slate-50 border border-slate-200 shadow-inner "; // Full/Passive state
+    containerClass += "bg-slate-50 border border-slate-200 shadow-inner "; 
   } else {
-    containerClass += "bg-white border border-slate-200 shadow-lg hover:shadow-xl hover:-translate-y-px "; // Default state
+    containerClass += "bg-white border border-slate-200 shadow-lg hover:shadow-xl hover:-translate-y-px "; 
   }
 
   return (
