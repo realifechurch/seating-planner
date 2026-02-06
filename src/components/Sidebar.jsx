@@ -69,6 +69,12 @@ export default function Sidebar({
     setEditingGuest(null);
   };
 
+  // --- NEW: Missing helper function that caused the crash ---
+  const handleAutoAssign = () => {
+    if (!assignGroup || !assignTable) return alert("Please select a group and a table.");
+    autoAssignGroup(assignGroup, assignTable);
+  };
+
   const availableGroups = [...new Set(unassigned.map(g => g.group))].filter(g => g !== 'None');
   const realTables = Object.keys(tables);
 
@@ -204,11 +210,11 @@ export default function Sidebar({
                         <div className="flex gap-1">
                             <select value={conflictA} onChange={e => setConflictA(e.target.value)} className="flex-1 bg-black/20 text-[10px] p-1.5 rounded border border-white/10 outline-none">
                                 <option value="">Guest A</option>
-                                {allGuests.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                                {allGuests && allGuests.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                             </select>
                             <select value={conflictB} onChange={e => setConflictB(e.target.value)} className="flex-1 bg-black/20 text-[10px] p-1.5 rounded border border-white/10 outline-none">
                                 <option value="">Guest B</option>
-                                {allGuests.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                                {allGuests && allGuests.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                             </select>
                         </div>
                         <button onClick={() => { if(conflictA && conflictB && conflictA !== conflictB) { const gA = allGuests.find(g=>g.id===conflictA); const gB = allGuests.find(g=>g.id===conflictB); addConflict(gA, gB); setConflictA(""); setConflictB(""); }}} className="w-full bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 py-1.5 rounded border border-rose-500/30 text-[10px] font-bold">Block</button>
