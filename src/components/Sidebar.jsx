@@ -25,22 +25,37 @@ export default function Sidebar({
   savePlan, exportToPDF, handleLogout,
   userEmail, handleFileUpload,
   tables, autoAssignGroup, addDecor,
-  updateGuestDetails // NEW
+  updateGuestDetails 
 }) {
   const [newGuestName, setNewGuestName] = useState("");
+  // New State for Manual Add inputs
+  const [newGuestMeal, setNewGuestMeal] = useState("Standard");
+  const [newGuestDiet, setNewGuestDiet] = useState("");
+
   const [selectedGuestIds, setSelectedGuestIds] = useState(new Set());
-  
   const [assignGroup, setAssignGroup] = useState("");
   const [assignTable, setAssignTable] = useState("");
-
-  // Edit Modal State
-  const [editingGuest, setEditingGuest] = useState(null); // { id, meal, diet, name }
+  const [editingGuest, setEditingGuest] = useState(null); 
 
   const handleManualAddGuest = (e) => {
     e.preventDefault();
     if (!newGuestName.trim()) return;
-    setUnassigned(prev => [...prev, { id: crypto.randomUUID(), name: newGuestName.trim(), group: 'None', meal: 'Standard', diet: '' }]);
+    
+    // Create guest with all metadata
+    const newGuest = { 
+        id: crypto.randomUUID(), 
+        name: newGuestName.trim(), 
+        group: 'None', 
+        meal: newGuestMeal, 
+        diet: newGuestDiet 
+    };
+
+    setUnassigned(prev => [...prev, newGuest]);
+    
+    // Reset fields
     setNewGuestName("");
+    setNewGuestMeal("Standard");
+    setNewGuestDiet("");
   };
 
   const toggleGuestSelection = (id) => {
@@ -73,18 +88,18 @@ export default function Sidebar({
   };
 
   const availableGroups = [...new Set(unassigned.map(g => g.group))].filter(g => g !== 'None');
-  const realTables = Object.keys(tables); // Simplified filter
+  const realTables = Object.keys(tables); 
 
   return (
     <div className="w-80 bg-slate-900 p-5 flex flex-col border-r border-slate-800 z-20 shadow-2xl relative h-full">
       <h2 className="text-xs font-black text-indigo-400 uppercase tracking-widest mb-4">Guest Manager</h2>
       
-      {/* EDIT MODAL OVERLAY */}
+      {/* --- EDIT MODAL (Pop up) --- */}
       {editingGuest && (
         <div className="absolute inset-0 z-50 bg-slate-900/95 flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-slate-800 border border-slate-600 p-4 rounded-xl w-full shadow-2xl">
-                <h3 className="text-white font-bold mb-2">Edit Guest</h3>
-                <p className="text-slate-400 text-xs mb-3">{editingGuest.name}</p>
+                <h3 className="text-white font-bold mb-2">Edit Details</h3>
+                <p className="text-slate-400 text-xs mb-3 font-bold">{editingGuest.name}</p>
                 
                 <label className="block text-[10px] uppercase text-slate-500 font-bold mb-1">Meal Preference</label>
                 <select 
@@ -111,13 +126,33 @@ export default function Sidebar({
         </div>
       )}
 
-      {/* MANUAL ADD */}
-      <form onSubmit={handleManualAddGuest} className="flex gap-2 mb-2">
-        <input value={newGuestName} onChange={e => setNewGuestName(e.target.value)} placeholder="Guest Name..." className="flex-1 bg-slate-950 border border-slate-800 p-2 rounded-lg text-xs outline-none focus:border-indigo-500" />
-        <button type="submit" className="bg-indigo-600 px-3 rounded-lg font-bold text-lg hover:bg-indigo-500 shadow-md">+</button>
+      {/* --- MANUAL ADD GUEST FORM (Updated) --- */}
+      <form onSubmit={handleManualAddGuest} className="bg-slate-800 p-3 rounded-xl border border-slate-700 mb-4 space-y-2">
+        <input 
+            value={newGuestName} 
+            onChange={e => setNewGuestName(e.target.value)} 
+            placeholder="Guest Name..." 
+            className="w-full bg-slate-950 border border-slate-800 p-2 rounded-lg text-xs outline-none focus:border-indigo-500" 
+        />
+        <div className="flex gap-2">
+            <select 
+                value={newGuestMeal}
+                onChange={e => setNewGuestMeal(e.target.value)}
+                className="flex-1 bg-slate-950 border border-slate-800 p-2 rounded-lg text-[10px] outline-none"
+            >
+                {MEAL_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+            <input 
+                value={newGuestDiet}
+                onChange={e => setNewGuestDiet(e.target.value)}
+                placeholder="Diet (opt)..."
+                className="flex-1 bg-slate-950 border border-slate-800 p-2 rounded-lg text-[10px] outline-none"
+            />
+        </div>
+        <button type="submit" className="w-full bg-indigo-600 py-1.5 rounded-lg font-bold text-xs uppercase hover:bg-indigo-500 shadow-md">Add Guest</button>
       </form>
 
-      {/* CSV & ACTIONS */}
+      {/* CSV IMPORT */}
       <div className="flex gap-2 mb-4">
         <label className="flex-1 bg-slate-800 border border-slate-700 text-center p-2 rounded-lg cursor-pointer font-bold text-[9px] uppercase hover:bg-slate-700 transition text-slate-400 hover:text-white">
           Upload CSV<input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
@@ -144,18 +179,26 @@ export default function Sidebar({
 
       {/* GUEST LIST */}
       <div className="flex-1 overflow-y-auto space-y-1.5 pr-2 custom-scrollbar bg-slate-900/50 rounded-xl mb-4 p-2">
-        {unassigned.length === 0 && <p className="text-[10px] text-slate-600 text-center mt-4 italic">Add guests to start</p>}
+        {unassigned.length === 0 && <p className="text-[10px] text-slate-600 text-center mt-4 italic">List is empty.</p>}
         {unassigned.map((guest) => {
           const isSelected = selectedGuestIds.has(guest.id);
           const groupColor = GROUP_COLORS.find(g => g.name === guest.group)?.color || 'bg-slate-700';
+          // Visual indicator if guest has Diet/Meal data
+          const hasData = guest.diet || (guest.meal && guest.meal !== 'Standard');
+
           return (
             <div key={guest.id} className={`flex items-center gap-2 p-2 border rounded-lg text-[10px] transition-all ${isSelected ? 'bg-indigo-900/30 border-indigo-500' : 'bg-slate-800 border-slate-700 hover:border-slate-500'}`}>
               <input type="checkbox" checked={isSelected} onChange={() => toggleGuestSelection(guest.id)} className="accent-indigo-500 cursor-pointer" />
               <div draggable onDragStart={() => { window.draggedGuest = guest.name; window.draggedSource = 'sidebar'; }} className="flex-1 cursor-grab active:cursor-grabbing flex justify-between items-center overflow-hidden">
-                <span className="truncate mr-2">{guest.name}</span>
-                <div className="flex items-center gap-1">
-                    {/* EDIT BUTTON */}
-                    <button onClick={() => setEditingGuest(guest)} className="text-slate-500 hover:text-white"><IconEdit /></button>
+                <div className="flex items-center gap-1 truncate">
+                    <span className="truncate">{guest.name}</span>
+                    {hasData && <span className="text-[8px] text-yellow-500">★</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                    {/* EDIT BUTTON (More Visible) */}
+                    <button onClick={() => setEditingGuest(guest)} className="bg-slate-700 hover:bg-indigo-600 text-slate-300 hover:text-white p-1 rounded transition">
+                        <IconEdit />
+                    </button>
                     {guest.group !== 'None' && <span className={`w-2 h-2 rounded-full ${groupColor}`} title={guest.group}></span>}
                 </div>
               </div>

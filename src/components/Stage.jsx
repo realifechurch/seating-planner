@@ -21,8 +21,8 @@ export default function Stage({
     // If guest is just a string (legacy), no icon
     if (typeof guest !== 'object' || !guest.diet) return null;
     const diet = guest.diet.toLowerCase();
-    if (diet.includes('veg') || diet.includes('plant')) return <span className="text-[6px]">🍃</span>;
-    return <span className="text-[6px]">⚠️</span>;
+    if (diet.includes('veg') || diet.includes('plant')) return <span className="text-[8px] ml-0.5">🍃</span>;
+    return <span className="text-[8px] ml-0.5">⚠️</span>;
   };
 
   return (
