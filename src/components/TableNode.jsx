@@ -1,5 +1,5 @@
 import React from 'react';
-import GuestChair from './GuestChair'; // <--- Corrected Import
+import GuestChair from './GuestChair';
 
 // Minimalist Controls Icons
 const IconTrash = () => <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>;
@@ -18,17 +18,17 @@ export default function TableNode({
   let containerClass = "w-full h-full flex flex-col items-center justify-center p-1.5 transition-all duration-300 ease-out select-none relative ";
   
   if (config.shape === 'circle') containerClass += "rounded-full ";
-  else containerClass += "rounded-xl "; 
+  else containerClass += "rounded-xl "; // Apple prefers 'squircle' or softer radii
 
   // State Visuals
   if (hasConflict) {
-    containerClass += "bg-red-50 ring-2 ring-red-400 shadow-lg shadow-red-100 "; 
+    containerClass += "bg-red-50 ring-2 ring-red-400 shadow-lg shadow-red-100 "; // Error state
   } else if (isSelected) {
-    containerClass += "bg-white ring-2 ring-indigo-500 shadow-xl scale-[1.02] z-50 "; 
+    containerClass += "bg-white ring-2 ring-indigo-500 shadow-xl scale-[1.02] z-50 "; // Active state
   } else if (isFull) {
-    containerClass += "bg-slate-50 border border-slate-200 shadow-inner "; 
+    containerClass += "bg-slate-50 border border-slate-200 shadow-inner "; // Full/Passive state
   } else {
-    containerClass += "bg-white border border-slate-200 shadow-lg hover:shadow-xl hover:-translate-y-px "; 
+    containerClass += "bg-white border border-slate-200 shadow-lg hover:shadow-xl hover:-translate-y-px "; // Default state
   }
 
   return (

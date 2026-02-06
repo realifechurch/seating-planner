@@ -1,11 +1,11 @@
 import React from 'react';
 // IMPORT ATOMS (Flat structure)
-import DiningTable from './TableNode'; // Filename is TableNode.jsx
+import TableNode from './TableNode';
 import DecorItem from './DecorItem';
 
 export default function Stage({
   canvasRef,
-  tablePos, tables,
+  tablePos, tables, 
   selectedTableId, dragState, resizeState,
   handlePointerDown, handlePointerMove, handlePointerUp,
   handleResizePointerDown,
@@ -74,7 +74,7 @@ export default function Stage({
               >
                 {/* COMPONENT SWITCHER */}
                 {isTable ? (
-                    <DiningTable 
+                    <TableNode 
                         id={id} config={config} seated={seated}
                         isSelected={isSelected} isFull={isFull} hasConflict={hasConflict}
                         updateTableShape={updateTableShape} updateTableCapacity={updateTableCapacity} deleteTable={deleteTable}
