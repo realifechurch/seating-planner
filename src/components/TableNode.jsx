@@ -50,31 +50,51 @@ export default function TableNode({
              return (
                 <div
                     key={i}
-                    // 1. RE-ENABLE POINTER EVENTS: Vital so the mouse can grab this specific element
                     className="pointer-events-auto cursor-grab active:cursor-grabbing hover:scale-105 transition-transform relative z-20"
-                    
-                    // 2. ENABLE DRAG
                     draggable="true"
-                    
-                    // 3. STOP PROPAGATION: Prevents the click from reaching the table and starting a table-move
                     onPointerDown={(e) => e.stopPropagation()}
                     
-                    // 4. CONFIGURE DRAG DATA (The Fix)
+                    // --- DRAG START HANDLER ---
                     onDragStart={(e) => {
-                        // Stop the event bubbling up to the table
                         e.stopPropagation();
-                        
-                        // GLOBAL STATE: Tells the app logic who is moving
                         window.draggedGuest = guestName;
                         window.draggedSource = id;
-
-                        // BROWSER STATE: Tells the browser "Yes, this is a drag operation"
-                        // Without this, the browser assumes you are just selecting text and won't show the drag ghost.
+                        
+                        // Set standard data
                         e.dataTransfer.effectAllowed = "move";
                         e.dataTransfer.setData("text/plain", JSON.stringify({ name: guestName, source: id }));
+
+                        // --- VISUAL FIX: Create Custom Ghost ---
+                        // We clone the element and append it to the body to escape the Table's scale/zoom context.
+                        // This guarantees the drag image is visible and not 0px size or transparent.
+                        const ghost = e.currentTarget.cloneNode(true);
                         
-                        // Optional: Create a cleaner drag image if the browser supports it
-                        // e.dataTransfer.setDragImage(e.target, 0, 0); 
+                        // Force styles on the ghost so it looks nice while dragging
+                        ghost.style.position = "absolute";
+                        ghost.style.top = "-9999px"; // Hide offscreen initially
+                        ghost.style.left = "-9999px";
+                        ghost.style.width = "80px"; // Ensure it has width
+                        ghost.style.height = "30px";
+                        ghost.style.backgroundColor = "white";
+                        ghost.style.border = "1px solid #cbd5e1";
+                        ghost.style.borderRadius = "99px";
+                        ghost.style.display = "flex";
+                        ghost.style.alignItems = "center";
+                        ghost.style.justifyContent = "center";
+                        ghost.style.fontSize = "10px";
+                        ghost.style.fontWeight = "bold";
+                        ghost.style.boxShadow = "0 4px 6px -1px rgba(0, 0, 0, 0.1)";
+                        ghost.style.zIndex = "99999";
+                        ghost.style.opacity = "1";
+                        
+                        // Add to DOM, set as image, then remove
+                        document.body.appendChild(ghost);
+                        e.dataTransfer.setDragImage(ghost, 40, 15); // Center cursor on the ghost
+                        
+                        // Cleanup after the drag image is snapshotted by the browser
+                        setTimeout(() => {
+                            document.body.removeChild(ghost);
+                        }, 0);
                     }}
                 >
                     <GuestChair guest={guest} />
