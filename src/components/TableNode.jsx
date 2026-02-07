@@ -44,23 +44,24 @@ export default function TableNode({
         </div>
 
         {/* Chair Grid */}
-        {/* Note: The grid has pointer-events-none to allow table dragging, 
-            so we must re-enable pointer-events-auto on the children (guests) */}
         <div className={`grid grid-cols-2 gap-1 w-full pointer-events-none px-1 overflow-hidden ${config.shape === 'circle' ? 'py-2' : ''}`}>
           {seated.map((guest, i) => {
              const guestName = typeof guest === 'string' ? guest : (guest?.name || 'Unknown');
              return (
                 <div
                     key={i}
-                    // 1. RE-ENABLE POINTER EVENTS so the guest can be clicked
-                    className="pointer-events-auto cursor-grab active:cursor-grabbing hover:scale-105 transition-transform"
-                    // 2. MAKE DRAGGABLE
-                    draggable
-                    // 3. HANDLE DRAG START
+                    // 1. POINTER EVENTS AUTO: Allows mouse interaction
+                    className="pointer-events-auto cursor-grab active:cursor-grabbing hover:scale-105 transition-transform relative z-20"
+                    // 2. HTML5 DRAGGABLE
+                    draggable="true"
+                    // 3. STOP PROPAGATION (The Fix): 
+                    // Prevents the table underneath from catching the click and starting a table move
+                    onPointerDown={(e) => e.stopPropagation()}
+                    // 4. HANDLE DRAG DATA
                     onDragStart={(e) => {
-                        e.stopPropagation(); // Vital: Prevents the TABLE from being dragged when you grab a GUEST
+                        e.stopPropagation();
                         window.draggedGuest = guestName;
-                        window.draggedSource = id; // Tell App.jsx this guest is coming from THIS table
+                        window.draggedSource = id;
                     }}
                 >
                     <GuestChair guest={guest} />
