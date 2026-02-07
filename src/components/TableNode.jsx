@@ -22,16 +22,12 @@ export default function TableNode({
 
   // --- COLOR STATES ---
   if (hasConflict) {
-    // Conflict: Harsh Red / Rose
     containerClass += "bg-rose-100 ring-2 ring-rose-500 shadow-lg shadow-rose-200 "; 
   } else if (isSelected) {
-    // Selected: White + Blue Ring
     containerClass += "bg-white ring-2 ring-indigo-500 shadow-2xl scale-[1.05] z-50 "; 
   } else if (isFull) {
-    // Full: Soft Red (Requested Change)
     containerClass += "bg-red-50 border-2 border-red-100 shadow-sm "; 
   } else {
-    // Default: White
     containerClass += "bg-white border border-slate-100 shadow-lg hover:shadow-xl hover:-translate-y-0.5 hover:bg-white/90 "; 
   }
 
@@ -41,17 +37,36 @@ export default function TableNode({
         {/* Table Number Badge */}
         <div className={`absolute -top-3 left-1/2 -translate-x-1/2 text-[9px] font-bold px-2 py-0.5 rounded-full shadow-sm z-10 tracking-wider transition-colors ${
             hasConflict ? 'bg-rose-500 text-white' : 
-            isFull ? 'bg-red-400 text-white' :  // Changed badge to red
+            isFull ? 'bg-red-400 text-white' : 
             'bg-white text-slate-400 border border-slate-100'
         }`}>
             {hasConflict ? '!' : `T-${id}`}
         </div>
 
         {/* Chair Grid */}
+        {/* Note: The grid has pointer-events-none to allow table dragging, 
+            so we must re-enable pointer-events-auto on the children (guests) */}
         <div className={`grid grid-cols-2 gap-1 w-full pointer-events-none px-1 overflow-hidden ${config.shape === 'circle' ? 'py-2' : ''}`}>
-          {seated.map((guest, i) => (
-            <GuestChair key={i} guest={guest} />
-          ))}
+          {seated.map((guest, i) => {
+             const guestName = typeof guest === 'string' ? guest : (guest?.name || 'Unknown');
+             return (
+                <div
+                    key={i}
+                    // 1. RE-ENABLE POINTER EVENTS so the guest can be clicked
+                    className="pointer-events-auto cursor-grab active:cursor-grabbing hover:scale-105 transition-transform"
+                    // 2. MAKE DRAGGABLE
+                    draggable
+                    // 3. HANDLE DRAG START
+                    onDragStart={(e) => {
+                        e.stopPropagation(); // Vital: Prevents the TABLE from being dragged when you grab a GUEST
+                        window.draggedGuest = guestName;
+                        window.draggedSource = id; // Tell App.jsx this guest is coming from THIS table
+                    }}
+                >
+                    <GuestChair guest={guest} />
+                </div>
+             );
+          })}
         </div>
       </div>
 
