@@ -97,7 +97,7 @@ export default function SeatingPlanner() {
     }
   };
 
-  // --- CSV & CLEAR LIST ---
+  // --- CSV & LIST MANAGEMENT ---
   const handleSmartFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -143,15 +143,29 @@ export default function SeatingPlanner() {
     });
   };
 
-  // Restore the functionality to wipe the guest list
-  const clearAllGuests = () => {
-    if (window.confirm("Are you sure? This will remove ALL guests from the plan.")) {
-        setUnassigned([]);
-        // Also clear seated guests, but keep tables
-        const emptyTables = {};
-        Object.keys(tables).forEach(id => emptyTables[id] = []);
-        setTables(emptyTables);
-    }
+  // ACTION 1: Unseat All (Moves everyone back to sidebar)
+  const handleUnseatAll = () => {
+    if (!window.confirm("Remove all guests from tables? They will be moved to the unseated list.")) return;
+    
+    // Gather all guests currently on tables
+    const allSeatedGuests = Object.values(tables).flat();
+    
+    // Clear tables
+    const emptyTables = {};
+    Object.keys(tables).forEach(id => emptyTables[id] = []);
+    setTables(emptyTables);
+
+    // Push seated guests back to unassigned
+    setUnassigned(prev => [...prev, ...allSeatedGuests]);
+  };
+
+  // ACTION 2: Delete All (Wipes data)
+  const handleDeleteAllGuests = () => {
+    if (!window.confirm("Permanently delete ALL guests? This cannot be undone.")) return;
+    setUnassigned([]);
+    const emptyTables = {};
+    Object.keys(tables).forEach(id => emptyTables[id] = []);
+    setTables(emptyTables);
   };
 
   // --- CONFLICT LOGIC ---
@@ -201,7 +215,7 @@ export default function SeatingPlanner() {
   };
 
   const autoAssignGroup = (groupName, startTableId) => {
-    const validTableIds = Object.keys(tables).filter(id => (tablePos[id]?.capacity || 0) > 0);
+    const validTableIds = Object.keys(tables).filter(id => (tablePos[id]?.capacity || 8) > 0);
     if (validTableIds.length === 0) return alert("No tables available!");
 
     const guestsToAssign = unassigned.filter(g => g.group === groupName);
@@ -371,7 +385,6 @@ export default function SeatingPlanner() {
   ].sort((a,b) => a.name.localeCompare(b.name));
 
   return (
-    // JONY IVE AESTHETIC: Pure Light, Soft Gradients
     <div className="flex h-screen w-screen bg-[#F5F5F7] text-[#1D1D1F] overflow-hidden font-sans relative selection:bg-indigo-500/20">
       
       {/* AMBIENT LIGHTING */}
@@ -387,7 +400,11 @@ export default function SeatingPlanner() {
         tables={tables} autoAssignGroup={autoAssignGroup} addDecor={addDecor}
         updateGuestDetails={updateGuestDetails}
         conflicts={conflicts} addConflict={addConflict} removeConflict={removeConflict}
-        allGuests={allGuests} clearAllGuests={clearAllGuests}
+        allGuests={allGuests} 
+        
+        // --- NEW PROPS ---
+        unseatAll={handleUnseatAll} 
+        deleteAll={handleDeleteAllGuests}
       />
       
       <Stage 
