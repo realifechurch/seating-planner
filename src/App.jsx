@@ -26,11 +26,10 @@ export default function SeatingPlanner() {
   const [tablePos, setTablePos] = useState({}); 
   const [conflicts, setConflicts] = useState([]); 
 
-  // UX State
   const [selectedTableId, setSelectedTableId] = useState(null);
   const [dragState, setDragState] = useState(null); 
   const [resizeState, setResizeState] = useState(null); 
-  const [viewScale, setViewScale] = useState(1); // <--- NEW: Zoom State
+  const [viewScale, setViewScale] = useState(1); 
 
   const canvasRef = useRef(null);
 
@@ -45,7 +44,6 @@ export default function SeatingPlanner() {
 
   useEffect(() => {
     const handleClick = (e) => {
-      // Deselect if clicking the background
       if (e.target.dataset.type === 'canvas-bg') setSelectedTableId(null);
     };
     window.addEventListener('pointerdown', handleClick);
@@ -186,7 +184,6 @@ export default function SeatingPlanner() {
       return acc;
   }, []);
 
-  // --- GUEST UTILS ---
   const updateGuestDetails = (id, updates) => {
     const inUnassigned = unassigned.find(g => g.id === id);
     if (inUnassigned) {
@@ -260,6 +257,18 @@ export default function SeatingPlanner() {
     if (target === 'sidebar') setUnassigned(prev => [...prev, guestObj]);
     else setTables(prev => ({ ...prev, [target]: [...(prev[target] || []), guestObj] }));
   };
+
+  // --- LISTEN FOR DRAG BACK TO SIDEBAR ---
+  useEffect(() => {
+    const handleSidebarDrop = (e) => {
+        const { guestName, source } = e.detail;
+        if (source !== 'sidebar') {
+             moveGuest(guestName, source, 'sidebar');
+        }
+    };
+    window.addEventListener('guest-dropped-sidebar', handleSidebarDrop);
+    return () => window.removeEventListener('guest-dropped-sidebar', handleSidebarDrop);
+  }, [tables, unassigned]);
 
   const addTable = (shapeType) => {
     const nextId = Object.keys(tables).length + 1;
@@ -351,22 +360,6 @@ export default function SeatingPlanner() {
     if (resizeState) { e.target.releasePointerCapture(e.pointerId); setResizeState(null); }
   };
 
-  const exportToPDF = async () => {
-    if (!canvasRef.current) return;
-    try {
-      const dataUrl = await toPng(canvasRef.current, { cacheBust: true, pixelRatio: 3 });
-      const pdf = new jsPDF('l', 'mm', 'a4');
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const imgProps = pdf.getImageProperties(dataUrl);
-      const pdfWidth = pageWidth - 20; 
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      pdf.setFontSize(18); pdf.text(planName || "Seating Layout", 10, 15);
-      pdf.setFontSize(10); pdf.text(`Generated on Gather: ${new Date().toLocaleDateString()}`, 10, 22);
-      pdf.addImage(dataUrl, 'PNG', 10, 30, pdfWidth, pdfHeight);
-      pdf.save(`${planName || 'Gather_Plan'}.pdf`);
-    } catch (err) { alert("Could not generate PDF."); }
-  };
-
   if (!session) return <Auth supabase={supabase} />;
 
   const allGuests = [
@@ -405,8 +398,6 @@ export default function SeatingPlanner() {
         addTable={addTable} updateTableShape={updateTableShape} 
         updateTableCapacity={updateTableCapacity} deleteTable={deleteTable}
         conflictTableIds={conflictTableIds}
-        
-        // --- PASS ZOOM PROPS ---
         viewScale={viewScale}
         setViewScale={setViewScale}
       />

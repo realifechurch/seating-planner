@@ -17,22 +17,21 @@ export default function TableNode({
   // --- AESTHETIC LOGIC ---
   let containerClass = "w-full h-full flex flex-col items-center justify-center p-1.5 transition-all duration-300 ease-out select-none relative ";
   
-  // Shape Handling
   if (config.shape === 'circle') containerClass += "rounded-full ";
-  else containerClass += "rounded-[1.2rem] "; // Soft 'Squircle'
+  else containerClass += "rounded-[1.2rem] "; 
 
-  // --- COLOR STATES (Restored functionality) ---
+  // --- COLOR STATES ---
   if (hasConflict) {
-    // Error State (Conflict)
-    containerClass += "bg-rose-50 ring-2 ring-rose-400 shadow-lg shadow-rose-100 "; 
+    // Conflict: Harsh Red / Rose
+    containerClass += "bg-rose-100 ring-2 ring-rose-500 shadow-lg shadow-rose-200 "; 
   } else if (isSelected) {
-    // Active State (Selected)
+    // Selected: White + Blue Ring
     containerClass += "bg-white ring-2 ring-indigo-500 shadow-2xl scale-[1.05] z-50 "; 
   } else if (isFull) {
-    // Full State (Success) - RESTORED: Soft Green
-    containerClass += "bg-emerald-50 border-2 border-emerald-100 shadow-sm "; 
+    // Full: Soft Red (Requested Change)
+    containerClass += "bg-red-50 border-2 border-red-100 shadow-sm "; 
   } else {
-    // Default State (Empty/Partial)
+    // Default: White
     containerClass += "bg-white border border-slate-100 shadow-lg hover:shadow-xl hover:-translate-y-0.5 hover:bg-white/90 "; 
   }
 
@@ -42,7 +41,7 @@ export default function TableNode({
         {/* Table Number Badge */}
         <div className={`absolute -top-3 left-1/2 -translate-x-1/2 text-[9px] font-bold px-2 py-0.5 rounded-full shadow-sm z-10 tracking-wider transition-colors ${
             hasConflict ? 'bg-rose-500 text-white' : 
-            isFull ? 'bg-emerald-500 text-white' : 
+            isFull ? 'bg-red-400 text-white' :  // Changed badge to red
             'bg-white text-slate-400 border border-slate-100'
         }`}>
             {hasConflict ? '!' : `T-${id}`}
@@ -56,14 +55,13 @@ export default function TableNode({
         </div>
       </div>
 
-      {/* Floating Action Bar (iOS Style Pill) */}
+      {/* Floating Action Bar */}
       {isSelected && (
         <div 
           className="absolute z-[100] bg-white/90 backdrop-blur-xl text-slate-700 p-1.5 rounded-2xl shadow-2xl flex items-center gap-2 no-drag border border-white/50 ring-1 ring-black/5"
           style={{ top: '0', left: '50%', transform: 'translate(-50%, -130%)' }}
           onPointerDown={(e) => e.stopPropagation()}
         >
-           {/* Shape Toggles */}
            <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
               <button onClick={() => updateTableShape(id, 'circle')} className={`w-6 h-6 rounded-full border border-slate-200 hover:border-indigo-400 transition ${config.shape === 'circle' ? 'bg-white shadow-sm' : ''}`} title="Circle"></button>
               <button onClick={() => updateTableShape(id, 'square')} className={`w-6 h-6 rounded-md border border-slate-200 hover:border-indigo-400 transition ${config.shape === 'square' ? 'bg-white shadow-sm' : ''}`} title="Square"></button>
@@ -72,7 +70,6 @@ export default function TableNode({
            
            <div className="h-4 w-px bg-slate-200"></div>
            
-           {/* Capacity Stepper */}
            <div className="flex items-center gap-1 bg-slate-100 rounded-xl px-1.5 py-0.5">
               <button onClick={() => updateTableCapacity(id, -1)} className="w-5 h-6 flex items-center justify-center hover:text-indigo-600 font-bold text-lg leading-none pb-0.5">-</button>
               <span className="text-[10px] font-mono w-4 text-center font-bold text-slate-600">{config.capacity || 8}</span>
@@ -81,7 +78,6 @@ export default function TableNode({
            
            <div className="h-4 w-px bg-slate-200"></div>
            
-           {/* Delete */}
            <button onClick={handleDelete} className="w-7 h-7 flex items-center justify-center hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-xl transition"><IconTrash/></button>
         </div>
       )}
