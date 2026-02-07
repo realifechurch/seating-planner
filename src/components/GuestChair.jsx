@@ -2,7 +2,7 @@ import React from 'react';
 
 export default function GuestChair({ guest }) {
   const name = typeof guest === 'string' ? guest : guest.name;
-  
+
   const getDietIcon = () => {
     if (typeof guest !== 'object' || !guest.diet) return null;
     const diet = guest.diet.toLowerCase();
@@ -11,7 +11,6 @@ export default function GuestChair({ guest }) {
   };
 
   return (
-    // Added 'title' prop for hover functionality
     <div 
       title={name} 
       className="flex items-center justify-center bg-white/90 border border-slate-100 shadow-sm rounded-full px-1 py-0.5 max-w-full cursor-help transition hover:scale-105 hover:z-10"
