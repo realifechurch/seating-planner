@@ -332,6 +332,57 @@ export default function SeatingPlanner() {
     if (resizeState) { e.target.releasePointerCapture(e.pointerId); setResizeState(null); }
   };
 
+  // --- TABLE & DECOR MANAGEMENT ---
+  const addTable = (shape) => {
+    const id = crypto.randomUUID();
+    setTablePos(prev => ({
+      ...prev,
+      [id]: { id, x: 50, y: 50, shape, type: 'table', capacity: 8, width: 14, height: 12 }
+    }));
+    setTables(prev => ({ ...prev, [id]: [] }));
+  };
+
+  const addDecor = (type) => {
+    const id = crypto.randomUUID();
+    setTablePos(prev => ({
+      ...prev,
+      [id]: { id, x: 50, y: 50, type, width: 10, height: 10 }
+    }));
+  };
+
+  const updateTableShape = (id, shape) => {
+    setTablePos(prev => ({
+      ...prev,
+      [id]: { ...prev[id], shape }
+    }));
+  };
+
+  const updateTableCapacity = (id, delta) => {
+    setTablePos(prev => {
+      const current = prev[id]?.capacity || 8;
+      return {
+        ...prev,
+        [id]: { ...prev[id], capacity: Math.max(1, current + delta) }
+      };
+    });
+  };
+
+  const deleteTable = (id) => {
+    const guestsToFree = tables[id] || [];
+    setUnassigned(prev => [...prev, ...guestsToFree]);
+    setTables(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setTablePos(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    if (selectedTableId === id) setSelectedTableId(null);
+  };
+
   const exportToPDF = async () => {
     if (!canvasRef.current) return;
     try {
