@@ -40,7 +40,12 @@ export default function Stage({
           const isResizing = resizeState?.id === id;
           
           const seated = tables[id] || [];
-          const capacity = config.capacity || 0;
+          
+          // --- FIX IS HERE ---
+          // Formerly: config.capacity || 0; 
+          // New: config.capacity || 8; 
+          // preventing "0 >= 0" which caused empty tables to turn green.
+          const capacity = config.capacity || 8; 
           const isFull = isTable && seated.length >= capacity;
           const hasConflict = conflictTableIds.includes(id);
 
