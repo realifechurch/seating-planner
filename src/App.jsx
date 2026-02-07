@@ -26,9 +26,11 @@ export default function SeatingPlanner() {
   const [tablePos, setTablePos] = useState({}); 
   const [conflicts, setConflicts] = useState([]); 
 
+  // UX State
   const [selectedTableId, setSelectedTableId] = useState(null);
   const [dragState, setDragState] = useState(null); 
   const [resizeState, setResizeState] = useState(null); 
+  const [viewScale, setViewScale] = useState(1); // <--- NEW: Zoom State
 
   const canvasRef = useRef(null);
 
@@ -43,6 +45,7 @@ export default function SeatingPlanner() {
 
   useEffect(() => {
     const handleClick = (e) => {
+      // Deselect if clicking the background
       if (e.target.dataset.type === 'canvas-bg') setSelectedTableId(null);
     };
     window.addEventListener('pointerdown', handleClick);
@@ -118,14 +121,12 @@ export default function SeatingPlanner() {
                 });
             });
 
-            // Update existing guests
             let newUnassigned = unassigned.map(g => incomingDataMap.has(g.name) ? { ...g, ...incomingDataMap.get(g.name) } : g);
             const newTables = {};
             Object.keys(tables).forEach(tableId => {
                 newTables[tableId] = tables[tableId].map(g => incomingDataMap.has(g.name) ? { ...g, ...incomingDataMap.get(g.name) } : g);
             });
 
-            // Add new guests
             const allCurrentNames = new Set([
                 ...unassigned.map(g => g.name),
                 ...Object.values(tables).flat().map(g => g.name)
@@ -143,23 +144,18 @@ export default function SeatingPlanner() {
     });
   };
 
-  // USER STORY 2: Reset Seating (Moves seated guests back to list)
   const handleUnseatAll = () => {
     if (!window.confirm("Unseat everyone? All guests will move back to the unseated list.")) return;
-    
     const allSeatedGuests = Object.values(tables).flat();
-    
     const emptyTables = {};
     Object.keys(tables).forEach(id => emptyTables[id] = []);
     setTables(emptyTables);
-
     setUnassigned(prev => [...prev, ...allSeatedGuests]);
   };
 
-  // USER STORY 1: Clear Unseated List (Deletes ONLY unseated guests)
   const handleClearUnseatedList = () => {
     if (!window.confirm("Delete all unseated guests? This removes them from the event. Seated guests will remain.")) return;
-    setUnassigned([]); // Wipes only the sidebar array
+    setUnassigned([]); 
   };
 
   // --- CONFLICT LOGIC ---
@@ -395,8 +391,6 @@ export default function SeatingPlanner() {
         updateGuestDetails={updateGuestDetails}
         conflicts={conflicts} addConflict={addConflict} removeConflict={removeConflict}
         allGuests={allGuests} 
-        
-        // --- PASSING CORRECT PROPS ---
         unseatAll={handleUnseatAll} 
         clearUnseatedList={handleClearUnseatedList}
       />
@@ -411,6 +405,10 @@ export default function SeatingPlanner() {
         addTable={addTable} updateTableShape={updateTableShape} 
         updateTableCapacity={updateTableCapacity} deleteTable={deleteTable}
         conflictTableIds={conflictTableIds}
+        
+        // --- PASS ZOOM PROPS ---
+        viewScale={viewScale}
+        setViewScale={setViewScale}
       />
     </div>
   );
