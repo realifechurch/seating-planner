@@ -5,14 +5,14 @@ import DecorItem from './DecorItem';
 
 export default function Stage({
   canvasRef,
-  tablePos, tables, 
+  tablePos = {}, 
+  tables = {}, 
   selectedTableId, dragState, resizeState,
   handlePointerDown, handlePointerMove, handlePointerUp,
   handleResizePointerDown,
   moveGuest,
   addTable, updateTableShape, updateTableCapacity, deleteTable,
   conflictTableIds = [],
-  // Zoom Props
   viewScale = 1,
   setViewScale
 }) {
@@ -63,7 +63,7 @@ export default function Stage({
             onDragOver={(e) => e.preventDefault()}
             onDrop={() => { if (window.draggedGuest) moveGuest(window.draggedGuest, window.draggedSource, 'sidebar'); }}
           >
-            {Object.entries(tablePos).map(([id, config]) => {
+            {Object.entries(tablePos || {}).map(([id, config]) => {
               const type = config.type || 'table';
               const isTable = type === 'table';
               const isDecor = !isTable;

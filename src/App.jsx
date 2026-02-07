@@ -21,11 +21,13 @@ export default function SeatingPlanner() {
   const [currentPlanId, setCurrentPlanId] = useState(null);
   const [planName, setPlanName] = useState("");
   
+  // Initialize with safe defaults to prevent crashes
   const [unassigned, setUnassigned] = useState([]); 
   const [tables, setTables] = useState({}); 
   const [tablePos, setTablePos] = useState({}); 
   const [conflicts, setConflicts] = useState([]); 
 
+  // UX State
   const [selectedTableId, setSelectedTableId] = useState(null);
   const [dragState, setDragState] = useState(null); 
   const [resizeState, setResizeState] = useState(null); 
@@ -42,6 +44,18 @@ export default function SeatingPlanner() {
 
   useEffect(() => { if (session?.user?.id) fetchPlans(); }, [session]);
 
+  // Listener for Dragging back to Sidebar
+  useEffect(() => {
+    const handleSidebarDrop = (e) => {
+        const { guestName, source } = e.detail;
+        if (source !== 'sidebar') {
+             moveGuest(guestName, source, 'sidebar');
+        }
+    };
+    window.addEventListener('guest-dropped-sidebar', handleSidebarDrop);
+    return () => window.removeEventListener('guest-dropped-sidebar', handleSidebarDrop);
+  }, [tables, unassigned]);
+
   useEffect(() => {
     const handleClick = (e) => {
       if (e.target.dataset.type === 'canvas-bg') setSelectedTableId(null);
@@ -54,7 +68,7 @@ export default function SeatingPlanner() {
   const fetchPlans = async () => {
     try {
       const { data } = await supabase.from('seating_plans').select('*').eq('user_id', session.user.id).order('created_at', { ascending: false });
-      if (data) setPlans(data);
+      if (data) setPlans(data || []);
     } catch (err) { console.error(err); }
   };
 
@@ -64,17 +78,24 @@ export default function SeatingPlanner() {
     }
     setPlanName(p.name);
     setCurrentPlanId(p.id);
-    const normalizeGuests = (list) => list.map(g => (typeof g === 'string' ? { id: crypto.randomUUID(), name: g, group: 'None', meal: 'Standard', diet: '' } : g));
-
-    setUnassigned(normalizeGuests(p.data.unassigned || []));
     
-    const loadedTables = p.data.tables || {};
+    // SAFETY CHECK: Handle null/undefined data gracefully
+    const safeData = p.data || {};
+    
+    const normalizeGuests = (list) => {
+        if (!Array.isArray(list)) return [];
+        return list.map(g => (typeof g === 'string' ? { id: crypto.randomUUID(), name: g, group: 'None', meal: 'Standard', diet: '' } : g));
+    };
+
+    setUnassigned(normalizeGuests(safeData.unassigned));
+    
+    const loadedTables = safeData.tables || {};
     const normalizedTables = {};
     Object.keys(loadedTables).forEach(key => { normalizedTables[key] = normalizeGuests(loadedTables[key]); });
 
     setTables(normalizedTables);
-    setTablePos(p.data.tablePos || {});
-    setConflicts(p.data.conflicts || []); 
+    setTablePos(safeData.tablePos || {});
+    setConflicts(safeData.conflicts || []); 
     setSelectedTableId(null);
   };
 
@@ -108,28 +129,37 @@ export default function SeatingPlanner() {
         skipEmptyLines: true, 
         complete: (results) => {
             const csvRows = results.data.filter(row => row.Name || Object.values(row)[0]);
+            
+            // Build map of new data
             const incomingDataMap = new Map();
             csvRows.forEach(row => {
                 const name = row.Name || Object.values(row)[0];
-                incomingDataMap.set(name, {
-                    name: name,
-                    group: row.Group || 'None',
-                    meal: row.Meal || 'Standard',
-                    diet: row.Diet || ''
-                });
+                if (name) {
+                    incomingDataMap.set(name, {
+                        name: name,
+                        group: row.Group || 'None',
+                        meal: row.Meal || 'Standard',
+                        diet: row.Diet || ''
+                    });
+                }
             });
 
+            // Refresh existing unassigned guests
             let newUnassigned = unassigned.map(g => incomingDataMap.has(g.name) ? { ...g, ...incomingDataMap.get(g.name) } : g);
-            const newTables = {};
-            Object.keys(tables).forEach(tableId => {
-                newTables[tableId] = tables[tableId].map(g => incomingDataMap.has(g.name) ? { ...g, ...incomingDataMap.get(g.name) } : g);
+            
+            // Refresh existing seated guests
+            const newTables = { ...tables };
+            Object.keys(newTables).forEach(tableId => {
+                newTables[tableId] = newTables[tableId].map(g => incomingDataMap.has(g.name) ? { ...g, ...incomingDataMap.get(g.name) } : g);
             });
 
+            // Gather all current names to prevent duplicates
             const allCurrentNames = new Set([
-                ...unassigned.map(g => g.name),
-                ...Object.values(tables).flat().map(g => g.name)
+                ...newUnassigned.map(g => g.name),
+                ...Object.values(newTables).flat().map(g => g.name)
             ]);
 
+            // Add ONLY truly new guests
             incomingDataMap.forEach((data, name) => {
                 if (!allCurrentNames.has(name)) {
                     newUnassigned.push({ id: crypto.randomUUID(), ...data });
@@ -143,7 +173,7 @@ export default function SeatingPlanner() {
   };
 
   const handleUnseatAll = () => {
-    if (!window.confirm("Unseat everyone? All guests will move back to the unseated list.")) return;
+    if (!window.confirm("Unseat everyone?")) return;
     const allSeatedGuests = Object.values(tables).flat();
     const emptyTables = {};
     Object.keys(tables).forEach(id => emptyTables[id] = []);
@@ -152,7 +182,7 @@ export default function SeatingPlanner() {
   };
 
   const handleClearUnseatedList = () => {
-    if (!window.confirm("Delete all unseated guests? This removes them from the event. Seated guests will remain.")) return;
+    if (!window.confirm("Delete all unseated guests?")) return;
     setUnassigned([]); 
   };
 
@@ -258,18 +288,6 @@ export default function SeatingPlanner() {
     else setTables(prev => ({ ...prev, [target]: [...(prev[target] || []), guestObj] }));
   };
 
-  // --- LISTENER FOR DRAG BACK TO SIDEBAR ---
-  useEffect(() => {
-    const handleSidebarDrop = (e) => {
-        const { guestName, source } = e.detail;
-        if (source !== 'sidebar') {
-             moveGuest(guestName, source, 'sidebar');
-        }
-    };
-    window.addEventListener('guest-dropped-sidebar', handleSidebarDrop);
-    return () => window.removeEventListener('guest-dropped-sidebar', handleSidebarDrop);
-  }, [tables, unassigned]);
-
   const addTable = (shapeType) => {
     const nextId = Object.keys(tables).length + 1;
     setTables(prev => ({ ...prev, [nextId]: [] }));
@@ -362,10 +380,11 @@ export default function SeatingPlanner() {
 
   if (!session) return <Auth supabase={supabase} />;
 
+  // Safely calculate allGuests
   const allGuests = [
-      ...unassigned,
-      ...Object.values(tables).flat()
-  ].sort((a,b) => a.name.localeCompare(b.name));
+      ...(unassigned || []),
+      ...Object.values(tables || {}).flat()
+  ].sort((a,b) => (a.name || "").localeCompare(b.name || ""));
 
   return (
     <div className="flex h-screen w-screen bg-[#F5F5F7] text-[#1D1D1F] overflow-hidden font-sans relative selection:bg-indigo-500/20">
@@ -375,14 +394,25 @@ export default function SeatingPlanner() {
       <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-rose-200/20 rounded-full blur-[120px] pointer-events-none"></div>
 
       <Sidebar 
-        unassigned={unassigned} setUnassigned={setUnassigned}
-        plans={plans} loadPlan={loadPlan} currentPlanId={currentPlanId}
-        planName={planName} setPlanName={setPlanName}
-        savePlan={savePlan} exportToPDF={exportToPDF} handleLogout={handleLogout}
-        userEmail={session.user.email} handleFileUpload={handleSmartFileUpload}
-        tables={tables} autoAssignGroup={autoAssignGroup} addDecor={addDecor}
+        unassigned={unassigned || []} 
+        setUnassigned={setUnassigned}
+        plans={plans || []} 
+        loadPlan={loadPlan} 
+        currentPlanId={currentPlanId}
+        planName={planName} 
+        setPlanName={setPlanName}
+        savePlan={savePlan} 
+        exportToPDF={exportToPDF} 
+        handleLogout={handleLogout}
+        userEmail={session.user.email} 
+        handleFileUpload={handleSmartFileUpload}
+        tables={tables || {}} 
+        autoAssignGroup={autoAssignGroup} 
+        addDecor={addDecor}
         updateGuestDetails={updateGuestDetails}
-        conflicts={conflicts} addConflict={addConflict} removeConflict={removeConflict}
+        conflicts={conflicts || []} 
+        addConflict={addConflict} 
+        removeConflict={removeConflict}
         allGuests={allGuests} 
         unseatAll={handleUnseatAll} 
         clearUnseatedList={handleClearUnseatedList}
@@ -390,13 +420,20 @@ export default function SeatingPlanner() {
       
       <Stage 
         canvasRef={canvasRef}
-        tablePos={tablePos} tables={tables}
-        selectedTableId={selectedTableId} dragState={dragState} resizeState={resizeState}
-        handlePointerDown={handlePointerDown} handlePointerMove={handlePointerMove} handlePointerUp={handlePointerUp}
+        tablePos={tablePos || {}} 
+        tables={tables || {}}
+        selectedTableId={selectedTableId} 
+        dragState={dragState} 
+        resizeState={resizeState}
+        handlePointerDown={handlePointerDown} 
+        handlePointerMove={handlePointerMove} 
+        handlePointerUp={handlePointerUp}
         handleResizePointerDown={handleResizePointerDown}
         moveGuest={moveGuest}
-        addTable={addTable} updateTableShape={updateTableShape} 
-        updateTableCapacity={updateTableCapacity} deleteTable={deleteTable}
+        addTable={addTable} 
+        updateTableShape={updateTableShape} 
+        updateTableCapacity={updateTableCapacity} 
+        deleteTable={deleteTable}
         conflictTableIds={conflictTableIds}
         viewScale={viewScale}
         setViewScale={setViewScale}
