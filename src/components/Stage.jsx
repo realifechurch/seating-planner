@@ -14,18 +14,18 @@ export default function Stage({
   conflictTableIds = []
 }) {
   return (
-    <div className="flex-1 bg-slate-100 flex items-center justify-center p-8 overflow-hidden relative">
+    <div className="flex-1 flex items-center justify-center p-8 overflow-hidden relative z-10">
       
       {/* Visual Feedback: Selection Hint */}
-      {selectedTableId && <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-slate-900/80 text-white px-3 py-1 rounded-full text-[10px] font-bold shadow-lg backdrop-blur-sm animate-fade-in-up">Active Item</div>}
+      {selectedTableId && <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-4 py-1.5 rounded-full text-[10px] font-bold shadow-xl backdrop-blur-md animate-fade-in-up tracking-widest uppercase">Active Selection</div>}
 
       <div 
         ref={canvasRef} 
         data-type="canvas-bg"
-        className="aspect-video w-full max-h-full bg-white rounded-3xl shadow-2xl shadow-slate-200 relative border border-slate-200 touch-none overflow-hidden"
+        className="aspect-video w-full max-h-full bg-white rounded-[2.5rem] shadow-2xl shadow-slate-200/50 relative border border-white/60 touch-none overflow-hidden"
         style={{ 
-            backgroundImage: 'radial-gradient(#cbd5e1 1px, transparent 1px)', 
-            backgroundSize: '24px 24px' 
+            backgroundImage: 'radial-gradient(#e2e8f0 1.5px, transparent 1.5px)', 
+            backgroundSize: '32px 32px' 
         }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={() => { if (window.draggedGuest) moveGuest(window.draggedGuest, window.draggedSource, 'sidebar'); }}
@@ -70,7 +70,7 @@ export default function Stage({
                   cursor: isDragging ? 'grabbing' : 'grab', 
                   zIndex: isDragging || isResizing || isSelected ? 50 : 10,
                 }}
-                className="absolute group transition-shadow duration-200"
+                className="absolute group transition-shadow duration-300"
               >
                 {/* COMPONENT SWITCHER */}
                 {isTable ? (
@@ -86,18 +86,18 @@ export default function Stage({
                 {/* RESIZE HANDLE */}
                 {isSelected && (
                   <div 
-                    className="no-drag absolute bottom-0 right-0 w-6 h-6 cursor-se-resize flex items-center justify-center z-50 translate-x-1/4 translate-y-1/4"
+                    className="no-drag absolute bottom-0 right-0 w-8 h-8 cursor-se-resize flex items-center justify-center z-50 translate-x-1/4 translate-y-1/4"
                     onPointerDown={(e) => handleResizePointerDown(e, id)}
                     aria-label="Resize Handle"
                   >
-                      <div className="w-3 h-3 bg-white border-2 border-indigo-500 rounded-full shadow-sm"></div>
+                      <div className="w-4 h-4 bg-white border-2 border-indigo-500 rounded-full shadow-lg"></div>
                   </div>
                 )}
 
                 {/* DELETE DECOR BTN */}
                 {isSelected && isDecor && (
-                    <div className="absolute -top-2 -right-2 z-50" onPointerDown={(e) => e.stopPropagation()}>
-                        <button onClick={() => { if(window.confirm('Remove?')) deleteTable(id); }} className="bg-white text-slate-400 hover:text-red-500 rounded-full p-1 w-6 h-6 flex items-center justify-center shadow-md border border-slate-200 transition">&times;</button>
+                    <div className="absolute -top-3 -right-3 z-50" onPointerDown={(e) => e.stopPropagation()}>
+                        <button onClick={() => { if(window.confirm('Remove?')) deleteTable(id); }} className="bg-white text-slate-400 hover:text-red-500 rounded-full p-1 w-7 h-7 flex items-center justify-center shadow-lg border border-slate-100 transition hover:scale-110">&times;</button>
                     </div>
                 )}
               </div>
@@ -106,21 +106,21 @@ export default function Stage({
         })}
       </div>
 
-      {/* FLOATING DOCK (Apple Style) */}
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-xl border border-white/20 shadow-2xl p-2 rounded-2xl flex gap-4 z-40 ring-1 ring-black/5">
-         <button onClick={() => addTable('circle')} className="flex flex-col items-center gap-1 p-2 hover:bg-slate-100 rounded-xl group transition w-16">
-           <div className="w-8 h-8 rounded-full border-2 border-slate-300 group-hover:border-indigo-500 transition"></div>
-           <span className="text-[9px] font-bold uppercase text-slate-400 group-hover:text-indigo-600">Circle</span>
+      {/* FLOATING DOCK (Apple Style Pill) */}
+      <div className="absolute bottom-10 left-1/2 -translate-x-1/2 bg-white/80 backdrop-blur-2xl border border-white/50 shadow-[0_20px_40px_-12px_rgba(0,0,0,0.1)] p-2.5 rounded-[2rem] flex gap-6 z-40 ring-1 ring-black/5 hover:scale-105 transition-transform duration-300">
+         <button onClick={() => addTable('circle')} className="flex flex-col items-center gap-1.5 p-2 hover:bg-white rounded-2xl group transition w-16">
+           <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 group-hover:border-indigo-400 group-hover:bg-indigo-50 transition shadow-sm"></div>
+           <span className="text-[10px] font-bold uppercase text-slate-400 group-hover:text-indigo-600 tracking-wider">Circle</span>
          </button>
-         <div className="w-px bg-slate-200 my-1"></div>
-         <button onClick={() => addTable('square')} className="flex flex-col items-center gap-1 p-2 hover:bg-slate-100 rounded-xl group transition w-16">
-           <div className="w-8 h-8 rounded-lg border-2 border-slate-300 group-hover:border-indigo-500 transition"></div>
-           <span className="text-[9px] font-bold uppercase text-slate-400 group-hover:text-indigo-600">Square</span>
+         <div className="w-px bg-slate-200 my-2"></div>
+         <button onClick={() => addTable('square')} className="flex flex-col items-center gap-1.5 p-2 hover:bg-white rounded-2xl group transition w-16">
+           <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 group-hover:border-indigo-400 group-hover:bg-indigo-50 transition shadow-sm"></div>
+           <span className="text-[10px] font-bold uppercase text-slate-400 group-hover:text-indigo-600 tracking-wider">Square</span>
          </button>
-         <div className="w-px bg-slate-200 my-1"></div>
-         <button onClick={() => addTable('rect')} className="flex flex-col items-center gap-1 p-2 hover:bg-slate-100 rounded-xl group transition w-16">
-           <div className="w-10 h-6 mt-1 rounded-lg border-2 border-slate-300 group-hover:border-indigo-500 transition"></div>
-           <span className="text-[9px] font-bold uppercase text-slate-400 group-hover:text-indigo-600">Rect</span>
+         <div className="w-px bg-slate-200 my-2"></div>
+         <button onClick={() => addTable('rect')} className="flex flex-col items-center gap-1.5 p-2 hover:bg-white rounded-2xl group transition w-16">
+           <div className="w-12 h-8 mt-2 rounded-xl bg-slate-100 border border-slate-200 group-hover:border-indigo-400 group-hover:bg-indigo-50 transition shadow-sm"></div>
+           <span className="text-[10px] font-bold uppercase text-slate-400 group-hover:text-indigo-600 tracking-wider">Rect</span>
          </button>
       </div>
     </div>

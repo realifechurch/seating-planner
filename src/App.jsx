@@ -24,7 +24,7 @@ export default function SeatingPlanner() {
   const [unassigned, setUnassigned] = useState([]); 
   const [tables, setTables] = useState({}); 
   const [tablePos, setTablePos] = useState({}); 
-  const [conflicts, setConflicts] = useState([]); // Rules for who can't sit together
+  const [conflicts, setConflicts] = useState([]); 
 
   const [selectedTableId, setSelectedTableId] = useState(null);
   const [dragState, setDragState] = useState(null); 
@@ -63,8 +63,6 @@ export default function SeatingPlanner() {
     }
     setPlanName(p.name);
     setCurrentPlanId(p.id);
-    
-    // Helper to ensure guest objects are valid
     const normalizeGuests = (list) => list.map(g => (typeof g === 'string' ? { id: crypto.randomUUID(), name: g, group: 'None', meal: 'Standard', diet: '' } : g));
 
     setUnassigned(normalizeGuests(p.data.unassigned || []));
@@ -99,7 +97,6 @@ export default function SeatingPlanner() {
     }
   };
 
-  // --- SMART CSV MERGE ---
   const handleSmartFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -149,7 +146,6 @@ export default function SeatingPlanner() {
     });
   };
 
-  // --- CONFLICT LOGIC ---
   const addConflict = (guestA, guestB) => {
     const exists = conflicts.find(c => 
         (c.guest1Id === guestA.id && c.guest2Id === guestB.id) || 
@@ -170,7 +166,6 @@ export default function SeatingPlanner() {
     setConflicts(prev => prev.filter(c => c.id !== conflictId));
   };
 
-  // Calculate tables with conflicts for visual feedback
   const conflictTableIds = Object.entries(tables).reduce((acc, [tableId, guests]) => {
       const guestIdsOnTable = new Set(guests.map(g => g.id));
       const hasConflict = conflicts.some(c => guestIdsOnTable.has(c.guest1Id) && guestIdsOnTable.has(c.guest2Id));
@@ -178,7 +173,6 @@ export default function SeatingPlanner() {
       return acc;
   }, []);
 
-  // --- GUEST UTILS ---
   const updateGuestDetails = (id, updates) => {
     const inUnassigned = unassigned.find(g => g.id === id);
     if (inUnassigned) {
@@ -196,7 +190,6 @@ export default function SeatingPlanner() {
     }
   };
 
-  // --- AUTO ASSIGN ---
   const autoAssignGroup = (groupName, startTableId) => {
     const validTableIds = Object.keys(tables).filter(id => (tablePos[id]?.capacity || 0) > 0);
     if (validTableIds.length === 0) return alert("No tables available!");
@@ -234,7 +227,6 @@ export default function SeatingPlanner() {
     setUnassigned(prev => prev.filter(g => !guestIdsAssigned.has(g.id)));
   };
 
-  // --- MOVE LOGIC ---
   const moveGuest = (guestObjOrName, source, target) => {
     let guestObj = null;
     const guestName = typeof guestObjOrName === 'string' ? guestObjOrName : guestObjOrName.name;
@@ -242,10 +234,9 @@ export default function SeatingPlanner() {
     if (source === 'sidebar') guestObj = unassigned.find(g => g.name === guestName);
     else guestObj = tables[source]?.find(g => g.name === guestName);
 
-    // Fallback if data is missing
     if (!guestObj) guestObj = { id: crypto.randomUUID(), name: guestName, group: 'None', meal: 'Standard', diet: '' };
 
-    if (tablePos[target]?.capacity === 0) return; // Cannot drop on decor
+    if (tablePos[target]?.capacity === 0) return; 
     const targetCap = tablePos[target]?.capacity || 8;
     if (target !== 'sidebar' && (tables[target]?.length || 0) >= targetCap) return alert("Table is full!");
 
@@ -256,7 +247,6 @@ export default function SeatingPlanner() {
     else setTables(prev => ({ ...prev, [target]: [...(prev[target] || []), guestObj] }));
   };
 
-  // --- ADD ITEMS ---
   const addTable = (shapeType) => {
     const nextId = Object.keys(tables).length + 1;
     setTables(prev => ({ ...prev, [nextId]: [] }));
@@ -297,7 +287,6 @@ export default function SeatingPlanner() {
     setSelectedTableId(null);
   };
 
-  // --- POINTER EVENTS ---
   const handlePointerDown = (e, id) => {
     if (e.target.closest('.no-drag')) return; 
     setSelectedTableId(id); e.preventDefault(); e.stopPropagation(); 
@@ -366,15 +355,22 @@ export default function SeatingPlanner() {
 
   if (!session) return <Auth supabase={supabase} />;
 
-  // --- CALCULATE ALL GUESTS FOR SIDEBAR DROPDOWNS ---
-  // This was missing before, causing the crash!
   const allGuests = [
       ...unassigned,
       ...Object.values(tables).flat()
   ].sort((a,b) => a.name.localeCompare(b.name));
 
   return (
-    <div className="flex h-screen w-screen bg-slate-950 text-slate-200 overflow-hidden font-sans">
+    // APPLE AESTHETIC BACKGROUND
+    <div className="flex h-screen w-screen bg-slate-50 text-slate-800 overflow-hidden font-sans relative">
+      
+      {/* BACKGROUND ACCENTS */}
+      <div className="absolute top-0 left-0 w-full h-full opacity-50 z-0 pointer-events-none" 
+        style={{
+            backgroundImage: 'radial-gradient(circle at 10% 20%, rgba(224, 231, 255, 1) 0%, rgba(240, 253, 244, 0) 50%)'
+        }}>
+      </div>
+
       <Sidebar 
         unassigned={unassigned} setUnassigned={setUnassigned}
         plans={plans} loadPlan={loadPlan} currentPlanId={currentPlanId}
@@ -384,8 +380,9 @@ export default function SeatingPlanner() {
         tables={tables} autoAssignGroup={autoAssignGroup} addDecor={addDecor}
         updateGuestDetails={updateGuestDetails}
         conflicts={conflicts} addConflict={addConflict} removeConflict={removeConflict}
-        allGuests={allGuests} // <--- PASSING THE MISSING PROP
+        allGuests={allGuests} 
       />
+      
       <Stage 
         canvasRef={canvasRef}
         tablePos={tablePos} tables={tables}
