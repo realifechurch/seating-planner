@@ -258,7 +258,7 @@ export default function SeatingPlanner() {
     else setTables(prev => ({ ...prev, [target]: [...(prev[target] || []), guestObj] }));
   };
 
-  // --- LISTEN FOR DRAG BACK TO SIDEBAR ---
+  // --- LISTENER FOR DRAG BACK TO SIDEBAR ---
   useEffect(() => {
     const handleSidebarDrop = (e) => {
         const { guestName, source } = e.detail;

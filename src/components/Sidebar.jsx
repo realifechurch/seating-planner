@@ -33,7 +33,7 @@ export default function Sidebar({
   const [newGuestMeal, setNewGuestMeal] = useState("Standard");
   const [selectedGuestIds, setSelectedGuestIds] = useState(new Set());
   const [activeTab, setActiveTab] = useState('people'); 
-  const [searchTerm, setSearchTerm] = useState(""); // <-- Search State
+  const [searchTerm, setSearchTerm] = useState(""); 
 
   const [conflictA, setConflictA] = useState("");
   const [conflictB, setConflictB] = useState("");
@@ -72,23 +72,13 @@ export default function Sidebar({
     autoAssignGroup(assignGroup, assignTable);
   };
 
-  // --- DRAG BACK LOGIC ---
+  // Logic to handle guests being dragged BACK to the sidebar
   const handleDropBack = (e) => {
     e.preventDefault();
     const guestName = window.draggedGuest;
     const source = window.draggedSource;
+    // Dispatch event for App.jsx to handle the data move
     if (guestName && source !== 'sidebar') {
-        // Trigger move from the App level via event or direct prop if we had it.
-        // Since we don't have moveGuest prop here, we can rely on a custom event 
-        // OR simpler: Use the provided `setUnassigned` to "catch" the drop locally if needed.
-        // BETTER: The Sidebar is just the "drop zone". The App.jsx Stage handles drops on canvas.
-        // Actually, we need to handle the drop HERE.
-        // We will emit a custom event that App.jsx listens for? No, let's keep it simple.
-        // We will perform the move logic if possible, or assume the parent handles it.
-        // Wait, Sidebar doesn't have `moveGuest`.
-        // Let's add a `moveGuest` prop or dispatch a global event.
-        // Actually, standard HTML5 DnD is clunky across components without context.
-        // HACK: Dispatch a global event the App can hear.
         const event = new CustomEvent('guest-dropped-sidebar', { detail: { guestName, source } });
         window.dispatchEvent(event);
     }
@@ -97,8 +87,8 @@ export default function Sidebar({
   const availableGroups = [...new Set(unassigned.map(g => g.group))].filter(g => g !== 'None');
   const realTables = Object.keys(tables);
 
-  // Filter Guests
-  const filteredGuests = unassigned.filter(g => g.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  // Crash-Proof Filter: Checks if name exists before filtering
+  const filteredGuests = unassigned.filter(g => (g.name || "").toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
     <div 
@@ -204,7 +194,6 @@ export default function Sidebar({
             </>
         )}
         
-        {/* TOOLS TAB (Kept same logic, just truncated for brevity in chat) */}
         {activeTab === 'tools' && (
             <div className="space-y-8">
                 <div>
@@ -215,7 +204,27 @@ export default function Sidebar({
                         ))}
                     </div>
                 </div>
-                {/* ... Magic Seat and Rules ... */}
+                {/* Magic Seat */}
+                <div>
+                    <h3 className="text-[10px] uppercase font-bold text-slate-400 mb-3 tracking-widest pl-1 flex items-center gap-1"><IconMagic /> Smart Assign</h3>
+                    <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+                        <select value={assignGroup} onChange={e => setAssignGroup(e.target.value)} className="w-full bg-slate-50 border-none text-xs p-2.5 rounded-xl outline-none text-slate-700 cursor-pointer hover:bg-slate-100 transition"><option value="">Select Group...</option>{availableGroups.map(g => <option key={g} value={g}>{g}</option>)}</select>
+                        <select value={assignTable} onChange={e => setAssignTable(e.target.value)} className="w-full bg-slate-50 border-none text-xs p-2.5 rounded-xl outline-none text-slate-700 cursor-pointer hover:bg-slate-100 transition"><option value="">Start at Table...</option>{realTables.map(id => <option key={id} value={id}>Table {id}</option>)}</select>
+                        <button onClick={handleAutoAssign} className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-2.5 rounded-xl text-xs font-bold transition shadow-md shadow-indigo-200 active:scale-[0.98]">Auto-Assign Guests</button>
+                    </div>
+                </div>
+                {/* Rules */}
+                <div>
+                    <h3 className="text-[10px] uppercase font-bold text-slate-400 mb-3 tracking-widest pl-1 flex items-center gap-1"><IconSettings /> Constraints</h3>
+                    <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+                        <div className="flex gap-2">
+                            <select value={conflictA} onChange={e => setConflictA(e.target.value)} className="flex-1 bg-slate-50 border-none text-[10px] p-2 rounded-xl outline-none cursor-pointer"><option value="">Guest A</option>{allGuests && allGuests.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
+                            <select value={conflictB} onChange={e => setConflictB(e.target.value)} className="flex-1 bg-slate-50 border-none text-[10px] p-2 rounded-xl outline-none cursor-pointer"><option value="">Guest B</option>{allGuests && allGuests.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
+                        </div>
+                        <button onClick={() => { if(conflictA && conflictB && conflictA !== conflictB) { const gA = allGuests.find(g=>g.id===conflictA); const gB = allGuests.find(g=>g.id===conflictB); addConflict(gA, gB); setConflictA(""); setConflictB(""); }}} className="w-full bg-rose-50 text-rose-600 hover:bg-rose-100 py-2 rounded-xl text-[10px] font-bold border border-rose-100 transition active:scale-[0.98]">Block Pairing</button>
+                        <div className="space-y-1.5 pt-1">{conflicts.map(c => (<div key={c.id} className="flex justify-between items-center text-[10px] bg-slate-50 p-2 rounded-lg text-slate-500"><span>{c.name1} ⚡ {c.name2}</span><button onClick={() => removeConflict(c.id)} className="text-slate-300 hover:text-red-500 font-bold">&times;</button></div>))}</div>
+                    </div>
+                </div>
                 <button onClick={exportToPDF} className="w-full py-3 bg-[#1D1D1F] hover:bg-black text-white rounded-2xl text-xs font-bold uppercase tracking-widest shadow-lg transition duration-300 active:scale-[0.98]">Export PDF</button>
             </div>
         )}
