@@ -143,29 +143,23 @@ export default function SeatingPlanner() {
     });
   };
 
-  // ACTION 1: Unseat All (Moves everyone back to sidebar)
+  // USER STORY 2: Reset Seating (Moves seated guests back to list)
   const handleUnseatAll = () => {
-    if (!window.confirm("Remove all guests from tables? They will be moved to the unseated list.")) return;
+    if (!window.confirm("Unseat everyone? All guests will move back to the unseated list.")) return;
     
-    // Gather all guests currently on tables
     const allSeatedGuests = Object.values(tables).flat();
     
-    // Clear tables
     const emptyTables = {};
     Object.keys(tables).forEach(id => emptyTables[id] = []);
     setTables(emptyTables);
 
-    // Push seated guests back to unassigned
     setUnassigned(prev => [...prev, ...allSeatedGuests]);
   };
 
-  // ACTION 2: Delete All (Wipes data)
-  const handleDeleteAllGuests = () => {
-    if (!window.confirm("Permanently delete ALL guests? This cannot be undone.")) return;
-    setUnassigned([]);
-    const emptyTables = {};
-    Object.keys(tables).forEach(id => emptyTables[id] = []);
-    setTables(emptyTables);
+  // USER STORY 1: Clear Unseated List (Deletes ONLY unseated guests)
+  const handleClearUnseatedList = () => {
+    if (!window.confirm("Delete all unseated guests? This removes them from the event. Seated guests will remain.")) return;
+    setUnassigned([]); // Wipes only the sidebar array
   };
 
   // --- CONFLICT LOGIC ---
@@ -402,9 +396,9 @@ export default function SeatingPlanner() {
         conflicts={conflicts} addConflict={addConflict} removeConflict={removeConflict}
         allGuests={allGuests} 
         
-        // --- NEW PROPS ---
+        // --- PASSING CORRECT PROPS ---
         unseatAll={handleUnseatAll} 
-        deleteAll={handleDeleteAllGuests}
+        clearUnseatedList={handleClearUnseatedList}
       />
       
       <Stage 

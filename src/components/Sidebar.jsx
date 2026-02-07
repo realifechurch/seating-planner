@@ -26,7 +26,7 @@ export default function Sidebar({
   tables, autoAssignGroup, addDecor,
   updateGuestDetails,
   conflicts, addConflict, removeConflict, allGuests, 
-  unseatAll, deleteAll // <-- New props received here
+  unseatAll, clearUnseatedList // <-- Received updated props
 }) {
   const [newGuestName, setNewGuestName] = useState("");
   const [newGuestMeal, setNewGuestMeal] = useState("Standard");
@@ -174,13 +174,13 @@ export default function Sidebar({
                         {unassigned.length === 0 && <div className="text-center text-slate-300 text-xs py-8">All guests seated.</div>}
                     </div>
 
-                    {/* --- NEW BUTTONS (Split Functionality) --- */}
-                    <div className="grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-slate-100">
-                        <button onClick={unseatAll} className="w-full text-center text-[10px] text-slate-600 hover:text-slate-900 font-bold py-2.5 bg-slate-100 hover:bg-slate-200 rounded-xl transition">
-                            Unseat All Guests
+                    {/* --- CLEAR/RESET BUTTONS --- */}
+                    <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
+                        <button onClick={unseatAll} className="w-full text-center text-[10px] text-slate-600 hover:text-slate-900 font-bold py-3 bg-slate-100 hover:bg-slate-200 rounded-xl transition active:scale-[0.98]">
+                            Reset Seating (Unseat All)
                         </button>
-                        <button onClick={deleteAll} className="w-full text-center text-[10px] text-red-500 hover:text-red-600 font-bold py-2.5 bg-red-50 hover:bg-red-100 rounded-xl transition">
-                            Delete Guest List
+                        <button onClick={clearUnseatedList} className="w-full text-center text-[10px] text-red-500 hover:text-red-600 font-bold py-3 bg-red-50 hover:bg-red-100 rounded-xl transition active:scale-[0.98]">
+                            Clear Unassigned List
                         </button>
                     </div>
                 </div>
