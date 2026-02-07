@@ -19,10 +19,14 @@ const GROUP_COLORS = [
 const MEAL_OPTIONS = ['Standard', 'Beef', 'Chicken', 'Fish', 'Veg', 'Vegan', 'Child'];
 
 export default function Sidebar({
-  unassigned, setUnassigned,
-  plans, loadPlan, currentPlanId,
+  unassigned = [], 
+  setUnassigned,
+  plans = [], 
+  loadPlan, currentPlanId,
   planName, setPlanName,
-  savePlan, exportToPDF, handleLogout,
+  savePlan, 
+  exportToPDF, // <--- THIS WAS MISSING, NOW ADDED
+  handleLogout,
   userEmail, handleFileUpload,
   tables, autoAssignGroup, addDecor,
   updateGuestDetails,
@@ -77,7 +81,6 @@ export default function Sidebar({
     e.preventDefault();
     const guestName = window.draggedGuest;
     const source = window.draggedSource;
-    // Dispatch event for App.jsx to handle the data move
     if (guestName && source !== 'sidebar') {
         const event = new CustomEvent('guest-dropped-sidebar', { detail: { guestName, source } });
         window.dispatchEvent(event);
@@ -85,15 +88,15 @@ export default function Sidebar({
   };
 
   const availableGroups = [...new Set(unassigned.map(g => g.group))].filter(g => g !== 'None');
-  const realTables = Object.keys(tables);
+  const realTables = Object.keys(tables || {});
 
-  // Crash-Proof Filter: Checks if name exists before filtering
-  const filteredGuests = unassigned.filter(g => (g.name || "").toLowerCase().includes(searchTerm.toLowerCase()));
+  // Crash-Proof Filter
+  const safeUnassigned = Array.isArray(unassigned) ? unassigned : [];
+  const filteredGuests = safeUnassigned.filter(g => (g.name || "").toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
     <div 
         className="w-80 h-[96%] my-auto ml-4 bg-white/80 backdrop-blur-2xl border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.04)] rounded-[24px] flex flex-col z-20 relative font-sans text-[#1D1D1F] overflow-hidden ring-1 ring-black/5"
-        // DROP ZONE FOR RETURNING GUESTS
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
         onDrop={handleDropBack}
     >
@@ -218,11 +221,11 @@ export default function Sidebar({
                     <h3 className="text-[10px] uppercase font-bold text-slate-400 mb-3 tracking-widest pl-1 flex items-center gap-1"><IconSettings /> Constraints</h3>
                     <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
                         <div className="flex gap-2">
-                            <select value={conflictA} onChange={e => setConflictA(e.target.value)} className="flex-1 bg-slate-50 border-none text-[10px] p-2 rounded-xl outline-none cursor-pointer"><option value="">Guest A</option>{allGuests && allGuests.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
-                            <select value={conflictB} onChange={e => setConflictB(e.target.value)} className="flex-1 bg-slate-50 border-none text-[10px] p-2 rounded-xl outline-none cursor-pointer"><option value="">Guest B</option>{allGuests && allGuests.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
+                            <select value={conflictA} onChange={e => setConflictA(e.target.value)} className="flex-1 bg-slate-50 border-none text-[10px] p-2 rounded-xl outline-none cursor-pointer"><option value="">Guest A</option>{(allGuests || []).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
+                            <select value={conflictB} onChange={e => setConflictB(e.target.value)} className="flex-1 bg-slate-50 border-none text-[10px] p-2 rounded-xl outline-none cursor-pointer"><option value="">Guest B</option>{(allGuests || []).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
                         </div>
                         <button onClick={() => { if(conflictA && conflictB && conflictA !== conflictB) { const gA = allGuests.find(g=>g.id===conflictA); const gB = allGuests.find(g=>g.id===conflictB); addConflict(gA, gB); setConflictA(""); setConflictB(""); }}} className="w-full bg-rose-50 text-rose-600 hover:bg-rose-100 py-2 rounded-xl text-[10px] font-bold border border-rose-100 transition active:scale-[0.98]">Block Pairing</button>
-                        <div className="space-y-1.5 pt-1">{conflicts.map(c => (<div key={c.id} className="flex justify-between items-center text-[10px] bg-slate-50 p-2 rounded-lg text-slate-500"><span>{c.name1} ⚡ {c.name2}</span><button onClick={() => removeConflict(c.id)} className="text-slate-300 hover:text-red-500 font-bold">&times;</button></div>))}</div>
+                        <div className="space-y-1.5 pt-1">{(conflicts || []).map(c => (<div key={c.id} className="flex justify-between items-center text-[10px] bg-slate-50 p-2 rounded-lg text-slate-500"><span>{c.name1} ⚡ {c.name2}</span><button onClick={() => removeConflict(c.id)} className="text-slate-300 hover:text-red-500 font-bold">&times;</button></div>))}</div>
                     </div>
                 </div>
                 <button onClick={exportToPDF} className="w-full py-3 bg-[#1D1D1F] hover:bg-black text-white rounded-2xl text-xs font-bold uppercase tracking-widest shadow-lg transition duration-300 active:scale-[0.98]">Export PDF</button>
