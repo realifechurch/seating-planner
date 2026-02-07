@@ -97,6 +97,7 @@ export default function SeatingPlanner() {
     }
   };
 
+  // --- CSV & CLEAR LIST ---
   const handleSmartFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -117,17 +118,14 @@ export default function SeatingPlanner() {
                 });
             });
 
-            let newUnassigned = unassigned
-                .filter(g => incomingDataMap.has(g.name))
-                .map(g => ({ ...g, ...incomingDataMap.get(g.name) }));
-
+            // Update existing guests
+            let newUnassigned = unassigned.map(g => incomingDataMap.has(g.name) ? { ...g, ...incomingDataMap.get(g.name) } : g);
             const newTables = {};
             Object.keys(tables).forEach(tableId => {
-                newTables[tableId] = tables[tableId]
-                    .filter(g => incomingDataMap.has(g.name))
-                    .map(g => ({ ...g, ...incomingDataMap.get(g.name) }));
+                newTables[tableId] = tables[tableId].map(g => incomingDataMap.has(g.name) ? { ...g, ...incomingDataMap.get(g.name) } : g);
             });
 
+            // Add new guests
             const allCurrentNames = new Set([
                 ...unassigned.map(g => g.name),
                 ...Object.values(tables).flat().map(g => g.name)
@@ -141,11 +139,22 @@ export default function SeatingPlanner() {
 
             setUnassigned(newUnassigned);
             setTables(newTables);
-            alert("Smart Merge Complete.");
         }
     });
   };
 
+  // Restore the functionality to wipe the guest list
+  const clearAllGuests = () => {
+    if (window.confirm("Are you sure? This will remove ALL guests from the plan.")) {
+        setUnassigned([]);
+        // Also clear seated guests, but keep tables
+        const emptyTables = {};
+        Object.keys(tables).forEach(id => emptyTables[id] = []);
+        setTables(emptyTables);
+    }
+  };
+
+  // --- CONFLICT LOGIC ---
   const addConflict = (guestA, guestB) => {
     const exists = conflicts.find(c => 
         (c.guest1Id === guestA.id && c.guest2Id === guestB.id) || 
@@ -173,6 +182,7 @@ export default function SeatingPlanner() {
       return acc;
   }, []);
 
+  // --- GUEST UTILS ---
   const updateGuestDetails = (id, updates) => {
     const inUnassigned = unassigned.find(g => g.id === id);
     if (inUnassigned) {
@@ -346,10 +356,10 @@ export default function SeatingPlanner() {
       const imgProps = pdf.getImageProperties(dataUrl);
       const pdfWidth = pageWidth - 20; 
       const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      pdf.setFontSize(18); pdf.text(planName || "Wedding Seating Plan", 10, 15);
-      pdf.setFontSize(10); pdf.text(`Generated: ${new Date().toLocaleDateString()}`, 10, 22);
+      pdf.setFontSize(18); pdf.text(planName || "Seating Layout", 10, 15);
+      pdf.setFontSize(10); pdf.text(`Generated on Gather: ${new Date().toLocaleDateString()}`, 10, 22);
       pdf.addImage(dataUrl, 'PNG', 10, 30, pdfWidth, pdfHeight);
-      pdf.save(`${planName || 'Seating_Plan'}.pdf`);
+      pdf.save(`${planName || 'Gather_Plan'}.pdf`);
     } catch (err) { alert("Could not generate PDF."); }
   };
 
@@ -361,15 +371,12 @@ export default function SeatingPlanner() {
   ].sort((a,b) => a.name.localeCompare(b.name));
 
   return (
-    // APPLE AESTHETIC BACKGROUND
-    <div className="flex h-screen w-screen bg-slate-50 text-slate-800 overflow-hidden font-sans relative">
+    // JONY IVE AESTHETIC: Pure Light, Soft Gradients
+    <div className="flex h-screen w-screen bg-[#F5F5F7] text-[#1D1D1F] overflow-hidden font-sans relative selection:bg-indigo-500/20">
       
-      {/* BACKGROUND ACCENTS */}
-      <div className="absolute top-0 left-0 w-full h-full opacity-50 z-0 pointer-events-none" 
-        style={{
-            backgroundImage: 'radial-gradient(circle at 10% 20%, rgba(224, 231, 255, 1) 0%, rgba(240, 253, 244, 0) 50%)'
-        }}>
-      </div>
+      {/* AMBIENT LIGHTING */}
+      <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-indigo-200/20 rounded-full blur-[120px] pointer-events-none"></div>
+      <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-rose-200/20 rounded-full blur-[120px] pointer-events-none"></div>
 
       <Sidebar 
         unassigned={unassigned} setUnassigned={setUnassigned}
@@ -380,7 +387,7 @@ export default function SeatingPlanner() {
         tables={tables} autoAssignGroup={autoAssignGroup} addDecor={addDecor}
         updateGuestDetails={updateGuestDetails}
         conflicts={conflicts} addConflict={addConflict} removeConflict={removeConflict}
-        allGuests={allGuests} 
+        allGuests={allGuests} clearAllGuests={clearAllGuests}
       />
       
       <Stage 
