@@ -50,18 +50,31 @@ export default function TableNode({
              return (
                 <div
                     key={i}
-                    // 1. POINTER EVENTS AUTO: Allows mouse interaction
+                    // 1. RE-ENABLE POINTER EVENTS: Vital so the mouse can grab this specific element
                     className="pointer-events-auto cursor-grab active:cursor-grabbing hover:scale-105 transition-transform relative z-20"
-                    // 2. HTML5 DRAGGABLE
+                    
+                    // 2. ENABLE DRAG
                     draggable="true"
-                    // 3. STOP PROPAGATION (The Fix): 
-                    // Prevents the table underneath from catching the click and starting a table move
+                    
+                    // 3. STOP PROPAGATION: Prevents the click from reaching the table and starting a table-move
                     onPointerDown={(e) => e.stopPropagation()}
-                    // 4. HANDLE DRAG DATA
+                    
+                    // 4. CONFIGURE DRAG DATA (The Fix)
                     onDragStart={(e) => {
+                        // Stop the event bubbling up to the table
                         e.stopPropagation();
+                        
+                        // GLOBAL STATE: Tells the app logic who is moving
                         window.draggedGuest = guestName;
                         window.draggedSource = id;
+
+                        // BROWSER STATE: Tells the browser "Yes, this is a drag operation"
+                        // Without this, the browser assumes you are just selecting text and won't show the drag ghost.
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData("text/plain", JSON.stringify({ name: guestName, source: id }));
+                        
+                        // Optional: Create a cleaner drag image if the browser supports it
+                        // e.dataTransfer.setDragImage(e.target, 0, 0); 
                     }}
                 >
                     <GuestChair guest={guest} />
