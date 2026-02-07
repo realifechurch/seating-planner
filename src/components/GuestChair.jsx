@@ -1,10 +1,11 @@
 import React from 'react';
 
 export default function GuestChair({ guest }) {
-  const name = typeof guest === 'string' ? guest : guest.name;
-
+  // Safe check: handle string names (old data) or object guests (new data)
+  const name = typeof guest === 'string' ? guest : (guest?.name || 'Unknown');
+  
   const getDietIcon = () => {
-    if (typeof guest !== 'object' || !guest.diet) return null;
+    if (typeof guest !== 'object' || !guest || !guest.diet) return null;
     const diet = guest.diet.toLowerCase();
     if (diet.includes('veg') || diet.includes('plant')) return <span className="opacity-80" role="img" aria-label="Vegetarian">🌿</span>;
     return <span className="opacity-80" role="img" aria-label="Restriction">⚠️</span>;
