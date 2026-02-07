@@ -30,7 +30,7 @@ export default function Sidebar({
   userEmail, handleFileUpload,
   tables, 
   autoAssignGroup, 
-  addDecor, // <--- THIS WAS MISSING. I have added it back.
+  addDecor, // <--- THIS WAS MISSING. I have added it back to the list.
   updateGuestDetails,
   conflicts, addConflict, removeConflict, allGuests, 
   unseatAll, clearUnseatedList
