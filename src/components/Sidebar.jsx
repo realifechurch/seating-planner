@@ -25,7 +25,7 @@ export default function Sidebar({
   loadPlan, currentPlanId,
   planName, setPlanName,
   savePlan, 
-  exportToPDF, // <--- THIS WAS MISSING, NOW ADDED
+  exportToPDF, // <--- IMPORTANT: This variable must be here!
   handleLogout,
   userEmail, handleFileUpload,
   tables, autoAssignGroup, addDecor,

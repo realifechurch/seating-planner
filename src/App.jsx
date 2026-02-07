@@ -21,7 +21,7 @@ export default function SeatingPlanner() {
   const [currentPlanId, setCurrentPlanId] = useState(null);
   const [planName, setPlanName] = useState("");
   
-  // Initialize with safe defaults to prevent crashes
+  // Safe defaults
   const [unassigned, setUnassigned] = useState([]); 
   const [tables, setTables] = useState({}); 
   const [tablePos, setTablePos] = useState({}); 
@@ -130,7 +130,6 @@ export default function SeatingPlanner() {
         complete: (results) => {
             const csvRows = results.data.filter(row => row.Name || Object.values(row)[0]);
             
-            // Build map of new data
             const incomingDataMap = new Map();
             csvRows.forEach(row => {
                 const name = row.Name || Object.values(row)[0];
@@ -144,22 +143,17 @@ export default function SeatingPlanner() {
                 }
             });
 
-            // Refresh existing unassigned guests
             let newUnassigned = unassigned.map(g => incomingDataMap.has(g.name) ? { ...g, ...incomingDataMap.get(g.name) } : g);
-            
-            // Refresh existing seated guests
             const newTables = { ...tables };
             Object.keys(newTables).forEach(tableId => {
                 newTables[tableId] = newTables[tableId].map(g => incomingDataMap.has(g.name) ? { ...g, ...incomingDataMap.get(g.name) } : g);
             });
 
-            // Gather all current names to prevent duplicates
             const allCurrentNames = new Set([
                 ...newUnassigned.map(g => g.name),
                 ...Object.values(newTables).flat().map(g => g.name)
             ]);
 
-            // Add ONLY truly new guests
             incomingDataMap.forEach((data, name) => {
                 if (!allCurrentNames.has(name)) {
                     newUnassigned.push({ id: crypto.randomUUID(), ...data });
@@ -288,46 +282,6 @@ export default function SeatingPlanner() {
     else setTables(prev => ({ ...prev, [target]: [...(prev[target] || []), guestObj] }));
   };
 
-  const addTable = (shapeType) => {
-    const nextId = Object.keys(tables).length + 1;
-    setTables(prev => ({ ...prev, [nextId]: [] }));
-    const defaultWidth = shapeType === 'rect' ? 15 : 10; 
-    const defaultHeight = shapeType === 'rect' ? 15 : null; 
-    setTablePos(prev => ({ ...prev, [nextId]: { x: 50, y: 50, type: 'table', shape: shapeType, capacity: 8, width: defaultWidth, height: defaultHeight } }));
-    setSelectedTableId(nextId); 
-  };
-
-  const addDecor = (type) => {
-    const nextId = Object.keys(tables).length + 1;
-    setTables(prev => ({ ...prev, [nextId]: [] }));
-    let w = 15, h = 15, shape = 'rect';
-    if (type === 'dancefloor') { w = 30; h = 25; }
-    if (type === 'bar') { w = 20; h = 10; }
-    if (type === 'plant') { w = 5; h = null; shape = 'circle'; }
-    if (type === 'dj') { w = 10; h = null; shape = 'square'; }
-    setTablePos(prev => ({ ...prev, [nextId]: { x: 50, y: 50, type: type, shape: shape, capacity: 0, width: w, height: h } }));
-    setSelectedTableId(nextId);
-  };
-
-  const updateTableShape = (id, newShape) => setTablePos(prev => ({ ...prev, [id]: { ...prev[id], shape: newShape } }));
-  const updateTableCapacity = (id, delta) => setTablePos(prev => {
-      if (prev[id].type !== 'table' && prev[id].type !== undefined) return prev;
-      const current = prev[id].capacity || 8;
-      const newCap = Math.max(2, Math.min(20, current + delta));
-      return { ...prev, [id]: { ...prev[id], capacity: newCap } };
-  });
-
-  const deleteTable = (id) => {
-    const guestsAtTable = tables[id] || [];
-    if (guestsAtTable.length > 0) {
-        const rescued = guestsAtTable.map(g => (typeof g === 'string' ? { id: crypto.randomUUID(), name: g, group: 'None' } : g));
-        setUnassigned(prev => [...prev, ...rescued]);
-    }
-    const newTables = { ...tables }; delete newTables[id]; setTables(newTables);
-    const newTablePos = { ...tablePos }; delete newTablePos[id]; setTablePos(newTablePos);
-    setSelectedTableId(null);
-  };
-
   const handlePointerDown = (e, id) => {
     if (e.target.closest('.no-drag')) return; 
     setSelectedTableId(id); e.preventDefault(); e.stopPropagation(); 
@@ -378,13 +332,28 @@ export default function SeatingPlanner() {
     if (resizeState) { e.target.releasePointerCapture(e.pointerId); setResizeState(null); }
   };
 
+  const exportToPDF = async () => {
+    if (!canvasRef.current) return;
+    try {
+      const dataUrl = await toPng(canvasRef.current, { cacheBust: true, pixelRatio: 3 });
+      const pdf = new jsPDF('l', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const imgProps = pdf.getImageProperties(dataUrl);
+      const pdfWidth = pageWidth - 20; 
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      pdf.setFontSize(18); pdf.text(planName || "Seating Layout", 10, 15);
+      pdf.setFontSize(10); pdf.text(`Generated on Gather: ${new Date().toLocaleDateString()}`, 10, 22);
+      pdf.addImage(dataUrl, 'PNG', 10, 30, pdfWidth, pdfHeight);
+      pdf.save(`${planName || 'Gather_Plan'}.pdf`);
+    } catch (err) { alert("Could not generate PDF."); }
+  };
+
   if (!session) return <Auth supabase={supabase} />;
 
-  // Safely calculate allGuests
   const allGuests = [
-      ...(unassigned || []),
-      ...Object.values(tables || {}).flat()
-  ].sort((a,b) => (a.name || "").localeCompare(b.name || ""));
+      ...unassigned,
+      ...Object.values(tables).flat()
+  ].sort((a,b) => a.name.localeCompare(b.name));
 
   return (
     <div className="flex h-screen w-screen bg-[#F5F5F7] text-[#1D1D1F] overflow-hidden font-sans relative selection:bg-indigo-500/20">
@@ -402,7 +371,7 @@ export default function SeatingPlanner() {
         planName={planName} 
         setPlanName={setPlanName}
         savePlan={savePlan} 
-        exportToPDF={exportToPDF} 
+        exportToPDF={exportToPDF} // <--- THIS MATCHES SIDEBAR PROP
         handleLogout={handleLogout}
         userEmail={session.user.email} 
         handleFileUpload={handleSmartFileUpload}
@@ -420,20 +389,13 @@ export default function SeatingPlanner() {
       
       <Stage 
         canvasRef={canvasRef}
-        tablePos={tablePos || {}} 
-        tables={tables || {}}
-        selectedTableId={selectedTableId} 
-        dragState={dragState} 
-        resizeState={resizeState}
-        handlePointerDown={handlePointerDown} 
-        handlePointerMove={handlePointerMove} 
-        handlePointerUp={handlePointerUp}
+        tablePos={tablePos} tables={tables}
+        selectedTableId={selectedTableId} dragState={dragState} resizeState={resizeState}
+        handlePointerDown={handlePointerDown} handlePointerMove={handlePointerMove} handlePointerUp={handlePointerUp}
         handleResizePointerDown={handleResizePointerDown}
         moveGuest={moveGuest}
-        addTable={addTable} 
-        updateTableShape={updateTableShape} 
-        updateTableCapacity={updateTableCapacity} 
-        deleteTable={deleteTable}
+        addTable={addTable} updateTableShape={updateTableShape} 
+        updateTableCapacity={updateTableCapacity} deleteTable={deleteTable}
         conflictTableIds={conflictTableIds}
         viewScale={viewScale}
         setViewScale={setViewScale}
