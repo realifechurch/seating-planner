@@ -6,9 +6,10 @@ import { jsPDF } from 'jspdf';
 
 // --- COMPONENT IMPORTS ---
 import Auth from './components/Auth';
+// IMPORTANT: Importing SidebarPanel to ensure we get the fresh file
 import Sidebar from './components/SidebarPanel'; 
 import Stage from './components/Stage';
-import Stage3D from './components/Stage3D'; // <--- NEW IMPORT
+import Stage3D from './components/Stage3D'; 
 import PlanManager from './components/PlanManager';
 import useUndoRedo from './hooks/useUndoRedo';
 
@@ -17,11 +18,12 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
-// 3D Toggle Icon
+// --- ICONS FOR TOGGLE ---
 const Icon3D = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5"/><path d="M12 12v9"/><path d="M12 12L4 7.5"/></svg>;
 const Icon2D = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>;
 
 export default function SeatingPlanner() {
+  // --- GLOBAL STATE ---
   const [session, setSession] = useState(null);
   const [plans, setPlans] = useState([]);
   const [currentPlanId, setCurrentPlanId] = useState(null);
@@ -29,10 +31,10 @@ export default function SeatingPlanner() {
   const [saveStatus, setSaveStatus] = useState('saved'); 
   const [isPlanManagerOpen, setIsPlanManagerOpen] = useState(false);
   
-  // --- NEW STATE: VIEW MODE ---
+  // --- VIEW MODE STATE ---
   const [viewMode, setViewMode] = useState('2D'); // '2D' or '3D'
 
-  // --- HISTORY MANAGEMENT ---
+  // --- HISTORY MANAGEMENT (Undo/Redo) ---
   const { state: currentModel, setContent: setModel, undo, redo, canUndo, canRedo, reset: resetHistory } = useUndoRedo({
     unassigned: [],
     tables: {},
@@ -40,9 +42,10 @@ export default function SeatingPlanner() {
     conflicts: []
   });
 
+  // Destructure for easy access
   const { unassigned, tables, tablePos, conflicts } = currentModel;
 
-  // UX State
+  // --- UX STATE ---
   const [selectedTableId, setSelectedTableId] = useState(null);
   const [dragState, setDragState] = useState(null); 
   const [resizeState, setResizeState] = useState(null); 
@@ -71,17 +74,14 @@ export default function SeatingPlanner() {
     return () => clearTimeout(timer);
   }, [currentModel, planName]);
 
-  // --- HELPERS ---
-  const updateModel = (updates) => {
-      setModel({ ...currentModel, ...updates });
-  };
-
+  // --- STATE HELPERS (Wrapped for History) ---
+  const updateModel = (updates) => { setModel({ ...currentModel, ...updates }); };
   const setUnassigned = (val) => updateModel({ unassigned: typeof val === 'function' ? val(unassigned) : val });
   const setTables = (val) => updateModel({ tables: typeof val === 'function' ? val(tables) : val });
   const setTablePos = (val) => updateModel({ tablePos: typeof val === 'function' ? val(tablePos) : val });
   const setConflicts = (val) => updateModel({ conflicts: typeof val === 'function' ? val(conflicts) : val });
 
-  // --- DATA LOGIC ---
+  // --- DATABASE LOGIC ---
   const fetchPlans = async () => {
     try {
       const { data } = await supabase.from('seating_plans').select('*').eq('user_id', session.user.id).order('created_at', { ascending: false });
@@ -135,7 +135,8 @@ export default function SeatingPlanner() {
     setSaveStatus('saving');
 
     let thumbnailUrl = null;
-    if (canvasRef.current) {
+    // Only capture thumbnail if we are in 2D mode
+    if (canvasRef.current && viewMode === '2D') {
         try {
             thumbnailUrl = await toPng(canvasRef.current, { pixelRatio: 0.5, cacheBust: true, width: 800 });
         } catch(e) { console.log('Thumbnail generation failed'); }
@@ -161,7 +162,7 @@ export default function SeatingPlanner() {
     }
   };
 
-  // --- CSV ---
+  // --- FILE HANDLING ---
   const handleSmartFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -202,7 +203,7 @@ export default function SeatingPlanner() {
     });
   };
 
-  // --- ACTIONS ---
+  // --- ACTIONS & GUEST MANAGEMENT ---
   const moveGuest = (guestObjOrName, source, target) => {
     let guestObj = null;
     const guestName = typeof guestObjOrName === 'string' ? guestObjOrName : guestObjOrName.name;
@@ -342,20 +343,9 @@ export default function SeatingPlanner() {
 
   const updateGuestDetails = (id, updates) => {
     const inUnassigned = unassigned.find(g => g.id === id);
-    if (inUnassigned) {
-        updateModel({ unassigned: unassigned.map(g => g.id === id ? { ...g, ...updates } : g) });
-        return;
-    }
+    if (inUnassigned) { updateModel({ unassigned: unassigned.map(g => g.id === id ? { ...g, ...updates } : g) }); return; }
     for (const [tableId, guests] of Object.entries(tables)) {
-        if (guests.find(g => g.id === id)) {
-            updateModel({
-                tables: {
-                    ...tables,
-                    [tableId]: tables[tableId].map(g => g.id === id ? { ...g, ...updates } : g)
-                }
-            });
-            return;
-        }
+        if (guests.find(g => g.id === id)) { updateModel({ tables: { ...tables, [tableId]: tables[tableId].map(g => g.id === id ? { ...g, ...updates } : g) } }); return; }
     }
   };
 
@@ -373,24 +363,12 @@ export default function SeatingPlanner() {
   };
 
   const addConflict = (guestA, guestB) => {
-    const exists = conflicts.find(c => 
-        (c.guest1Id === guestA.id && c.guest2Id === guestB.id) || 
-        (c.guest1Id === guestB.id && c.guest2Id === guestA.id)
-    );
+    const exists = conflicts.find(c => (c.guest1Id === guestA.id && c.guest2Id === guestB.id) || (c.guest1Id === guestB.id && c.guest2Id === guestA.id));
     if (exists) return alert("Rule already exists.");
-
-    updateModel({ conflicts: [...conflicts, {
-        id: crypto.randomUUID(),
-        guest1Id: guestA.id,
-        guest2Id: guestB.id,
-        name1: guestA.name,
-        name2: guestB.name
-    }] });
+    updateModel({ conflicts: [...conflicts, { id: crypto.randomUUID(), guest1Id: guestA.id, guest2Id: guestB.id, name1: guestA.name, name2: guestB.name }] });
   };
 
-  const removeConflict = (conflictId) => {
-    updateModel({ conflicts: conflicts.filter(c => c.id !== conflictId) });
-  };
+  const removeConflict = (conflictId) => { updateModel({ conflicts: conflicts.filter(c => c.id !== conflictId) }); };
 
   const conflictTableIds = Object.entries(tables).reduce((acc, [tableId, guests]) => {
       const guestIdsOnTable = new Set(guests.map(g => g.id));
@@ -465,7 +443,7 @@ export default function SeatingPlanner() {
         unseatAll={handleUnseatAll} 
         clearUnseatedList={handleClearUnseatedList}
         exportToPDF={async () => {
-            if (!canvasRef.current) return;
+            if (!canvasRef.current || viewMode !== '2D') return alert("Switch to 2D view to export PDF.");
             try {
               const dataUrl = await toPng(canvasRef.current, { cacheBust: true, pixelRatio: 3 });
               const pdf = new jsPDF('l', 'mm', 'a4');
@@ -481,7 +459,7 @@ export default function SeatingPlanner() {
         }}
       />
       
-      {/* --- CONDITIONAL RENDERING: 2D vs 3D --- */}
+      {/* --- CONDITIONAL RENDER: 2D vs 3D --- */}
       {viewMode === '2D' ? (
           <Stage 
             canvasRef={canvasRef}
