@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 
+// --- FORCE UPDATE: Verifying updateGuestDetails is present ---
+
 // Icons
 const IconUserAdd = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>;
 const IconMagic = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>;
@@ -35,7 +37,7 @@ export default function Sidebar({
   tables, 
   autoAssignGroup, 
   addDecor, 
-  updateGuestDetails, // <--- RE-ADDED: This was missing!
+  updateGuestDetails, // <--- THIS VARIABLE IS HERE.
   conflicts, addConflict, removeConflict, allGuests, 
   unseatAll, clearUnseatedList
 }) {
@@ -73,7 +75,13 @@ export default function Sidebar({
 
   const saveGuestEdits = () => {
     if (!editingGuest) return;
-    updateGuestDetails(editingGuest.id, { meal: editingGuest.meal, diet: editingGuest.diet });
+    // This is the line that was crashing. 
+    // If updateGuestDetails is missing from the props above, this line fails.
+    if (updateGuestDetails) {
+        updateGuestDetails(editingGuest.id, { meal: editingGuest.meal, diet: editingGuest.diet });
+    } else {
+        console.error("Critical Error: updateGuestDetails function is missing from Sidebar props.");
+    }
     setEditingGuest(null);
   };
 
