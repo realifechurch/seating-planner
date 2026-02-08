@@ -6,7 +6,8 @@ import { jsPDF } from 'jspdf';
 
 // --- COMPONENT IMPORTS ---
 import Auth from './components/Auth';
-import Sidebar from './components/Sidebar';
+// CHANGED: Importing the renamed file to force a fresh build
+import Sidebar from './components/SidebarPanel'; 
 import Stage from './components/Stage';
 import PlanManager from './components/PlanManager';
 import useUndoRedo from './hooks/useUndoRedo';
@@ -21,11 +22,10 @@ export default function SeatingPlanner() {
   const [plans, setPlans] = useState([]);
   const [currentPlanId, setCurrentPlanId] = useState(null);
   const [planName, setPlanName] = useState("");
-  const [saveStatus, setSaveStatus] = useState('saved'); // 'saved', 'saving', 'error'
+  const [saveStatus, setSaveStatus] = useState('saved'); 
   const [isPlanManagerOpen, setIsPlanManagerOpen] = useState(false);
 
   // --- HISTORY MANAGEMENT ---
-  // We wrap the complex state in a single object for the history hook
   const { state: currentModel, setContent: setModel, undo, redo, canUndo, canRedo, reset: resetHistory } = useUndoRedo({
     unassigned: [],
     tables: {},
@@ -33,7 +33,6 @@ export default function SeatingPlanner() {
     conflicts: []
   });
 
-  // Destructure for easy access in the render
   const { unassigned, tables, tablePos, conflicts } = currentModel;
 
   // UX State
@@ -55,19 +54,17 @@ export default function SeatingPlanner() {
 
   // --- AUTO SAVE LOGIC ---
   useEffect(() => {
-    if (!currentPlanId) return; // Don't auto-save if no plan loaded
+    if (!currentPlanId) return; 
     setSaveStatus('saving');
     
     const timer = setTimeout(async () => {
-        await savePlan(false, true); // silent save
-    }, 3000); // 3-second debounce
+        await savePlan(false, true); 
+    }, 3000); 
 
     return () => clearTimeout(timer);
-  }, [currentModel, planName]); // Auto-save on any data change
+  }, [currentModel, planName]);
 
-  // --- HELPERS TO UPDATE STATE VIA HISTORY ---
-  // These wrappers effectively replace the old setUnassigned, setTables, etc.
-  // They ensure every change is pushed to the history stack.
+  // --- HELPERS ---
   const updateModel = (updates) => {
       setModel({ ...currentModel, ...updates });
   };
@@ -127,10 +124,9 @@ export default function SeatingPlanner() {
   };
 
   const savePlan = async (asNewVersion = false, silent = false) => {
-    if (!planName) return; // Don't save unnamed plans
+    if (!planName) return; 
     setSaveStatus('saving');
 
-    // Generate Thumbnail
     let thumbnailUrl = null;
     if (canvasRef.current) {
         try {
@@ -143,8 +139,8 @@ export default function SeatingPlanner() {
     
     const { data, error } = await supabase.from('seating_plans').upsert({ 
       id: idToUse, name: nameToUse, 
-      thumbnail: thumbnailUrl, // Assumes you added this column, or we store it in data
-      data: { ...currentModel }, // Save the whole snapshot
+      thumbnail: thumbnailUrl, 
+      data: { ...currentModel }, 
       user_id: session.user.id 
     }).select();
 
@@ -158,7 +154,7 @@ export default function SeatingPlanner() {
     }
   };
 
-  // --- CSV & LIST MANAGEMENT ---
+  // --- CSV ---
   const handleSmartFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -180,11 +176,6 @@ export default function SeatingPlanner() {
                     });
                 }
             });
-
-            // Logic to merge data... (simplified for brevity, logic remains same as previous but uses setUnassigned/setTables wrappers)
-            // Ideally we re-calculate the whole state and call setModel ONCE for clean undo.
-            // For now, we reuse the existing setters which will trigger individual history steps.
-            // To make this one undo step, we would construct `newState` and call `setModel(newState)`.
             
             let nextUnassigned = unassigned.map(g => incomingDataMap.has(g.name) ? { ...g, ...incomingDataMap.get(g.name) } : g);
             const nextTables = { ...tables };
@@ -199,21 +190,16 @@ export default function SeatingPlanner() {
                 }
             });
 
-            // Atomic update for Undo support
             updateModel({ unassigned: nextUnassigned, tables: nextTables });
         }
     });
   };
 
-  // ... (Keep existing helpers: handleUnseatAll, handleClearUnseatedList, moveGuest, etc.)
-  // Just ensure they use the `setUnassigned` etc wrappers defined above.
-  
-  // Re-implementing moveGuest to ensure it works with new state wrappers
+  // --- ACTIONS ---
   const moveGuest = (guestObjOrName, source, target) => {
     let guestObj = null;
     const guestName = typeof guestObjOrName === 'string' ? guestObjOrName : guestObjOrName.name;
 
-    // Logic to find guest
     if (source === 'sidebar') guestObj = unassigned.find(g => g.name === guestName);
     else guestObj = tables[source]?.find(g => g.name === guestName);
 
@@ -223,15 +209,12 @@ export default function SeatingPlanner() {
     const targetCap = tablePos[target]?.capacity || 8;
     if (target !== 'sidebar' && (tables[target]?.length || 0) >= targetCap) return alert("Table is full!");
 
-    // Construct new state
     let nextUnassigned = [...unassigned];
     let nextTables = { ...tables };
 
-    // Remove from source
     if (source === 'sidebar') nextUnassigned = nextUnassigned.filter(g => g.name !== guestName);
     else nextTables[source] = nextTables[source].filter(g => (typeof g === 'string' ? g : g.name) !== guestName);
 
-    // Add to target
     if (target === 'sidebar') nextUnassigned.push(guestObj);
     else nextTables[target] = [...(nextTables[target] || []), guestObj];
 
@@ -246,7 +229,7 @@ export default function SeatingPlanner() {
     };
     window.addEventListener('guest-dropped-sidebar', handleSidebarDrop);
     return () => window.removeEventListener('guest-dropped-sidebar', handleSidebarDrop);
-  }, [tables, unassigned]); // Dependencies matter for the callback closure
+  }, [tables, unassigned]);
 
   useEffect(() => {
     const handleClick = (e) => { if (e.target.dataset.type === 'canvas-bg') setSelectedTableId(null); };
@@ -254,9 +237,6 @@ export default function SeatingPlanner() {
     return () => window.removeEventListener('pointerdown', handleClick);
   }, []);
 
-  // ... (Keep addTable, addDecor, updateTableShape, updateTableCapacity, deleteTable)
-  // Ensure they call setTablePos / setTables wrappers.
-  
   const addTable = (shapeType) => {
     const nextId = Object.keys(tables).length + 1;
     const defaultWidth = shapeType === 'rect' ? 15 : 10; 
@@ -304,7 +284,7 @@ export default function SeatingPlanner() {
       return { ...prev, [id]: { ...prev[id], capacity: newCap } };
   });
 
-  // --- POINTER EVENTS (Unchanged mostly) ---
+  // --- POINTER EVENTS ---
   const handlePointerDown = (e, id) => {
     if (e.target.closest('.no-drag')) return; 
     setSelectedTableId(id); e.preventDefault(); e.stopPropagation(); 
@@ -355,7 +335,25 @@ export default function SeatingPlanner() {
     if (resizeState) { e.target.releasePointerCapture(e.pointerId); setResizeState(null); }
   };
 
-  // Needed for Sidebar props
+  const updateGuestDetails = (id, updates) => {
+    const inUnassigned = unassigned.find(g => g.id === id);
+    if (inUnassigned) {
+        updateModel({ unassigned: unassigned.map(g => g.id === id ? { ...g, ...updates } : g) });
+        return;
+    }
+    for (const [tableId, guests] of Object.entries(tables)) {
+        if (guests.find(g => g.id === id)) {
+            updateModel({
+                tables: {
+                    ...tables,
+                    [tableId]: tables[tableId].map(g => g.id === id ? { ...g, ...updates } : g)
+                }
+            });
+            return;
+        }
+    }
+  };
+
   const handleUnseatAll = () => {
     if (!window.confirm("Unseat everyone?")) return;
     const allSeatedGuests = Object.values(tables).flat();
@@ -369,14 +367,40 @@ export default function SeatingPlanner() {
     updateModel({ unassigned: [] });
   };
 
+  // --- CONFLICT LOGIC ---
+  const addConflict = (guestA, guestB) => {
+    const exists = conflicts.find(c => 
+        (c.guest1Id === guestA.id && c.guest2Id === guestB.id) || 
+        (c.guest1Id === guestB.id && c.guest2Id === guestA.id)
+    );
+    if (exists) return alert("Rule already exists.");
+
+    updateModel({ conflicts: [...conflicts, {
+        id: crypto.randomUUID(),
+        guest1Id: guestA.id,
+        guest2Id: guestB.id,
+        name1: guestA.name,
+        name2: guestB.name
+    }] });
+  };
+
+  const removeConflict = (conflictId) => {
+    updateModel({ conflicts: conflicts.filter(c => c.id !== conflictId) });
+  };
+
+  const conflictTableIds = Object.entries(tables).reduce((acc, [tableId, guests]) => {
+      const guestIdsOnTable = new Set(guests.map(g => g.id));
+      const hasConflict = conflicts.some(c => guestIdsOnTable.has(c.guest1Id) && guestIdsOnTable.has(c.guest2Id));
+      if (hasConflict) acc.push(tableId);
+      return acc;
+  }, []);
+
   const allGuests = [ ...unassigned, ...Object.values(tables).flat() ].sort((a,b) => a.name.localeCompare(b.name));
 
   if (!session) return <Auth supabase={supabase} />;
 
   return (
     <div className="flex h-screen w-screen bg-[#F5F5F7] text-[#1D1D1F] overflow-hidden font-sans relative selection:bg-indigo-500/20">
-      
-      {/* Background */}
       <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-indigo-200/20 rounded-full blur-[120px] pointer-events-none"></div>
       <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-rose-200/20 rounded-full blur-[120px] pointer-events-none"></div>
 
@@ -403,7 +427,7 @@ export default function SeatingPlanner() {
         userEmail={session.user.email} 
         handleFileUpload={handleSmartFileUpload}
         tables={tables || {}} 
-        autoAssignGroup={() => {}} // Simplified for brevity in this response
+        autoAssignGroup={() => {}} 
         addDecor={addDecor}
         updateGuestDetails={updateGuestDetails}
         conflicts={conflicts || []} 
@@ -412,7 +436,21 @@ export default function SeatingPlanner() {
         allGuests={allGuests} 
         unseatAll={handleUnseatAll} 
         clearUnseatedList={handleClearUnseatedList}
-        exportToPDF={() => {}} // Placeholder if function not in scope
+        exportToPDF={async () => {
+            if (!canvasRef.current) return;
+            try {
+              const dataUrl = await toPng(canvasRef.current, { cacheBust: true, pixelRatio: 3 });
+              const pdf = new jsPDF('l', 'mm', 'a4');
+              const pageWidth = pdf.internal.pageSize.getWidth();
+              const imgProps = pdf.getImageProperties(dataUrl);
+              const pdfWidth = pageWidth - 20; 
+              const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+              pdf.setFontSize(18); pdf.text(planName || "Seating Layout", 10, 15);
+              pdf.setFontSize(10); pdf.text(`Generated on Gather: ${new Date().toLocaleDateString()}`, 10, 22);
+              pdf.addImage(dataUrl, 'PNG', 10, 30, pdfWidth, pdfHeight);
+              pdf.save(`${planName || 'Gather_Plan'}.pdf`);
+            } catch (err) { alert("Could not generate PDF."); }
+        }}
       />
       
       <Stage 
