@@ -6,6 +6,9 @@ const IconMagic = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="no
 const IconSettings = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>;
 const IconTrash = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>;
 const IconSearch = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>;
+const IconFolder = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>;
+const IconUndo = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>;
+const IconRedo = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/></svg>;
 
 const GROUP_COLORS = [
   { name: 'None', color: 'bg-slate-300' },
@@ -21,17 +24,18 @@ const MEAL_OPTIONS = ['Standard', 'Beef', 'Chicken', 'Fish', 'Veg', 'Vegan', 'Ch
 export default function Sidebar({
   unassigned = [], 
   setUnassigned,
-  plans = [], 
-  loadPlan, currentPlanId,
   planName, setPlanName,
   savePlan, 
+  saveStatus, 
+  undo, redo, canUndo, canRedo,
+  openPlanManager, 
   exportToPDF, 
   handleLogout,
   userEmail, handleFileUpload,
   tables, 
   autoAssignGroup, 
-  addDecor, // <--- THIS WAS MISSING. I have added it back to the list.
-  updateGuestDetails,
+  addDecor, 
+  updateGuestDetails, // <--- RE-ADDED: This was missing!
   conflicts, addConflict, removeConflict, allGuests, 
   unseatAll, clearUnseatedList
 }) {
@@ -52,7 +56,7 @@ export default function Sidebar({
     e.preventDefault();
     if (!newGuestName.trim()) return;
     const newGuest = { id: crypto.randomUUID(), name: newGuestName.trim(), group: 'None', meal: newGuestMeal, diet: '' };
-    setUnassigned(prev => [...prev, newGuest]);
+    setUnassigned([...unassigned, newGuest]); 
     setNewGuestName("");
   };
 
@@ -63,7 +67,7 @@ export default function Sidebar({
   };
 
   const assignGroupToSelected = (groupName) => {
-    setUnassigned(prev => prev.map(g => selectedGuestIds.has(g.id) ? { ...g, group: groupName } : g));
+    setUnassigned(unassigned.map(g => selectedGuestIds.has(g.id) ? { ...g, group: groupName } : g));
     setSelectedGuestIds(new Set()); 
   };
 
@@ -96,6 +100,20 @@ export default function Sidebar({
   const safeUnassigned = Array.isArray(unassigned) ? unassigned : [];
   const filteredGuests = safeUnassigned.filter(g => (g.name || "").toLowerCase().includes(searchTerm.toLowerCase()));
 
+  // Status Indicator Logic
+  const getStatusColor = () => {
+      if (saveStatus === 'saving') return 'text-amber-500';
+      if (saveStatus === 'saved') return 'text-emerald-500';
+      if (saveStatus === 'error') return 'text-red-500';
+      return 'text-slate-300';
+  };
+  const getStatusText = () => {
+      if (saveStatus === 'saving') return 'Saving...';
+      if (saveStatus === 'saved') return 'All changes saved';
+      if (saveStatus === 'error') return 'Save failed';
+      return 'Unsaved changes';
+  };
+
   return (
     <div 
         className="w-80 h-[96%] my-auto ml-4 bg-white/80 backdrop-blur-2xl border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.04)] rounded-[24px] flex flex-col z-20 relative font-sans text-[#1D1D1F] overflow-hidden ring-1 ring-black/5"
@@ -105,16 +123,28 @@ export default function Sidebar({
       
       {/* HEADER */}
       <div className="p-5 border-b border-black/5">
-        <div className="flex justify-between items-center mb-4">
+        <div className="flex justify-between items-center mb-3">
              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Gather.</span>
-             <button onClick={() => savePlan(false)} className="text-xs font-semibold text-indigo-600 hover:text-indigo-500 transition">Save Changes</button>
+             {/* Status Indicator */}
+             <div className={`flex items-center gap-1.5 text-[10px] font-semibold ${getStatusColor()} transition-colors duration-500`}>
+                <div className={`w-1.5 h-1.5 rounded-full bg-current ${saveStatus === 'saving' ? 'animate-pulse' : ''}`}></div>
+                {getStatusText()}
+             </div>
         </div>
+        
+        {/* Title & Undo/Redo */}
         <div className="space-y-3">
              <input value={planName} onChange={e => setPlanName(e.target.value)} placeholder="Untitled Event" className="w-full bg-transparent border-none p-0 text-xl font-semibold text-[#1D1D1F] placeholder-slate-300 focus:ring-0 tracking-tight"/>
-             <select className="w-full bg-slate-100/50 border-none rounded-lg text-xs p-2 text-slate-500 outline-none hover:bg-slate-100 transition cursor-pointer" onChange={(e) => { const selected = plans.find(p => p.id === e.target.value); if (selected) loadPlan(selected); }} value={currentPlanId || ""}>
-                <option value="" disabled>Load existing plan...</option>
-                {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+             
+             <div className="flex gap-2">
+                <button onClick={openPlanManager} className="flex-1 flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-600 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wide transition">
+                    <IconFolder /> Open Plan
+                </button>
+                <div className="flex gap-1">
+                    <button onClick={undo} disabled={!canUndo} className="w-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 rounded-xl transition"><IconUndo /></button>
+                    <button onClick={redo} disabled={!canRedo} className="w-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 rounded-xl transition"><IconRedo /></button>
+                </div>
+             </div>
         </div>
       </div>
 
@@ -164,7 +194,7 @@ export default function Sidebar({
                                     <option>Set Group...</option>
                                     {GROUP_COLORS.map(g => <option key={g.name} value={g.name}>{g.name}</option>)}
                                 </select>
-                                <button onClick={() => { if(window.confirm('Delete selected?')) { const newSet = new Set(selectedGuestIds); setUnassigned(prev => prev.filter(g => !newSet.has(g.id))); setSelectedGuestIds(new Set()); }}} className="text-red-400 hover:text-red-600"><IconTrash/></button>
+                                <button onClick={() => { if(window.confirm('Delete selected?')) { const newSet = new Set(selectedGuestIds); setUnassigned(unassigned.filter(g => !newSet.has(g.id))); setSelectedGuestIds(new Set()); }}} className="text-red-400 hover:text-red-600"><IconTrash/></button>
                             </div>
                         )}
                     </div>
