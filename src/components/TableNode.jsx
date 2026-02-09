@@ -28,7 +28,7 @@ export default function TableNode({
   } else if (isFull) {
     containerClass += "bg-red-50 border-2 border-red-100 shadow-sm "; 
   } else {
-    containerClass += "bg-white border border-slate-100 shadow-lg hover:shadow-xl hover:-translate-y-0.5 hover:bg-white/90 "; 
+    containerClass += "bg-white border border-slate-200 shadow-lg hover:shadow-xl hover:-translate-y-0.5 hover:bg-white/90 "; 
   }
 
   return (
@@ -43,8 +43,8 @@ export default function TableNode({
             {hasConflict ? '!' : `T-${id}`}
         </div>
 
-        {/* Chair Grid */}
-        <div className={`grid grid-cols-2 gap-1 w-full pointer-events-none px-1 overflow-hidden ${config.shape === 'circle' ? 'py-2' : ''}`}>
+        {/* Chair Grid - Restored to Grid Layout for Names */}
+        <div className={`grid grid-cols-2 gap-1 w-full pointer-events-none px-2 overflow-hidden ${config.shape === 'circle' ? 'py-3' : 'py-1'}`}>
           {seated.map((guest, i) => {
              const guestName = typeof guest === 'string' ? guest : (guest?.name || 'Unknown');
              return (
@@ -63,38 +63,6 @@ export default function TableNode({
                         // Set standard data
                         e.dataTransfer.effectAllowed = "move";
                         e.dataTransfer.setData("text/plain", JSON.stringify({ name: guestName, source: id }));
-
-                        // --- VISUAL FIX: Create Custom Ghost ---
-                        // We clone the element and append it to the body to escape the Table's scale/zoom context.
-                        // This guarantees the drag image is visible and not 0px size or transparent.
-                        const ghost = e.currentTarget.cloneNode(true);
-                        
-                        // Force styles on the ghost so it looks nice while dragging
-                        ghost.style.position = "absolute";
-                        ghost.style.top = "-9999px"; // Hide offscreen initially
-                        ghost.style.left = "-9999px";
-                        ghost.style.width = "80px"; // Ensure it has width
-                        ghost.style.height = "30px";
-                        ghost.style.backgroundColor = "white";
-                        ghost.style.border = "1px solid #cbd5e1";
-                        ghost.style.borderRadius = "99px";
-                        ghost.style.display = "flex";
-                        ghost.style.alignItems = "center";
-                        ghost.style.justifyContent = "center";
-                        ghost.style.fontSize = "10px";
-                        ghost.style.fontWeight = "bold";
-                        ghost.style.boxShadow = "0 4px 6px -1px rgba(0, 0, 0, 0.1)";
-                        ghost.style.zIndex = "99999";
-                        ghost.style.opacity = "1";
-                        
-                        // Add to DOM, set as image, then remove
-                        document.body.appendChild(ghost);
-                        e.dataTransfer.setDragImage(ghost, 40, 15); // Center cursor on the ghost
-                        
-                        // Cleanup after the drag image is snapshotted by the browser
-                        setTimeout(() => {
-                            document.body.removeChild(ghost);
-                        }, 0);
                     }}
                 >
                     <GuestChair guest={guest} />

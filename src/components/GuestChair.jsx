@@ -14,10 +14,12 @@ export default function GuestChair({ guest }) {
   return (
     <div 
       title={name} 
-      className="flex items-center justify-center bg-white/90 border border-slate-100 shadow-sm rounded-full px-1 py-0.5 max-w-full cursor-help transition hover:scale-105 hover:z-10"
+      className="flex items-center justify-center bg-white/90 border border-slate-200 shadow-sm rounded-md px-1 py-0.5 w-full cursor-help transition hover:scale-105 hover:z-10 hover:border-indigo-300"
     >
-      <span className="text-[0.35rem] font-medium text-slate-700 truncate tracking-tight max-w-[40px]">{name}</span>
-      {getDietIcon() && <span className="text-[0.35rem] ml-0.5">{getDietIcon()}</span>}
+      <span className="text-[8px] font-semibold text-slate-700 truncate tracking-tight max-w-full block text-center">
+        {name}
+      </span>
+      {getDietIcon() && <span className="text-[8px] ml-0.5">{getDietIcon()}</span>}
     </div>
   );
 }

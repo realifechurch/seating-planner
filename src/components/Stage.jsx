@@ -1,5 +1,5 @@
 import React from 'react';
-import TableNode from './TableNode'; // <--- THIS IMPORT RESTORES THE UI
+import TableNode from './TableNode'; 
 
 export default function Stage({ 
   canvasRef, 
@@ -20,7 +20,6 @@ export default function Stage({
   setViewScale
 }) {
   
-  // --- SAFETY CHECKS (Keeps the app from crashing) ---
   const safeTablePos = tablePos || {};
   const safeTables = tables || {};
   const tableIds = Object.keys(safeTablePos); 
@@ -48,16 +47,22 @@ export default function Stage({
             const config = safeTablePos[id];
             const guests = safeTables[id] || [];
             
-            // Skip if data is corrupted
             if (!config) return null;
 
             const isSelected = selectedTableId === id;
             const hasConflict = conflictTableIds.includes(id);
             const isRect = config.shape === 'rect';
             
-            // Dimensions Logic
-            const w = config.width ? config.width * 10 : (isRect ? 180 : 120);
-            const h = config.height ? config.height * 10 : (isRect ? 120 : 120);
+            // --- FIX: DIMENSION LOGIC ---
+            // 1. Calculate Base Width
+            let w = config.width ? config.width * 10 : (isRect ? 180 : 120);
+            
+            // 2. Calculate Height
+            // If it is a Rectangle, use its own height or default.
+            // If it is a Circle/Square, FORCE height to equal width to keep it perfect.
+            let h = isRect 
+                ? (config.height ? config.height * 10 : 120)
+                : w; 
             
             return (
                 <div
@@ -79,7 +84,6 @@ export default function Stage({
                         if (guestName) moveGuest(guestName, source, id);
                     }}
                 >
-                    {/* --- THE FIX: Using TableNode again --- */}
                     <TableNode 
                         id={id}
                         config={config}
