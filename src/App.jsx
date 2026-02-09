@@ -8,7 +8,7 @@ import { jsPDF } from 'jspdf';
 import Auth from './components/Auth';
 import Sidebar from './components/SidebarPanel'; 
 import Stage from './components/Stage';
-// --- CRITICAL FIX: Importing Stage3D (matching the filename in Step 1) ---
+// --- CRITICAL FIX: Importing Stage3D (matching the filename in Step 2) ---
 import Stage3D from './components/Stage3D'; 
 
 import PlanManager from './components/PlanManager';

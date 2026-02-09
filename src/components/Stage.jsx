@@ -1,5 +1,5 @@
 import React from 'react';
-import TableNode from './TableNode'; // <--- THIS IMPORT RESTORES THE UI
+import TableNode from './TableNode'; // <--- THIS RESTORES THE UI
 
 export default function Stage({ 
   canvasRef, 
