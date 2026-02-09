@@ -9,7 +9,7 @@ import Auth from './components/Auth';
 import Sidebar from './components/SidebarPanel'; 
 import Stage from './components/Stage';
 
-// --- CRITICAL FIX: IMPORT THE NEW FILENAME "Scene3D" ---
+// --- FIXED IMPORT: Now pointing to Scene3D ---
 import Scene3D from './components/Scene3D'; 
 
 import PlanManager from './components/PlanManager';
@@ -41,6 +41,7 @@ export default function SeatingPlanner() {
     conflicts: []
   });
 
+  // Safe defaults
   const unassigned = currentModel?.unassigned || [];
   const tables = currentModel?.tables || {};
   const tablePos = currentModel?.tablePos || {};
@@ -377,7 +378,7 @@ export default function SeatingPlanner() {
             conflictTableIds={conflictTableIds} viewScale={viewScale} setViewScale={setViewScale}
           />
       ) : (
-          /* --- CRITICAL FIX: USE THE NEW COMPONENT "Scene3D" --- */
+          /* Using the new Scene3D component with defensive safety props */
           <Scene3D tables={tables} tablePos={tablePos} />
       )}
     </div>
