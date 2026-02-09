@@ -1,106 +1,59 @@
 import React from 'react';
-import TableNode from './TableNode';
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls, Sky, ContactShadows, Grid, Environment } from '@react-three/drei';
+import Table3D from './Table3D';
 
-export default function Stage({ 
-  canvasRef, 
-  tablePos = {}, 
-  tables = {},   
-  selectedTableId, 
-  handlePointerDown, 
-  handlePointerMove, 
-  handlePointerUp, 
-  handleResizePointerDown,
-  moveGuest, 
-  deleteTable,
-  addTable, 
-  updateTableShape, 
-  updateTableCapacity, 
-  conflictTableIds = [], 
-  viewScale = 1, 
-  setViewScale
-}) {
-  
-  // --- SAFETY CHECKS ---
-  const safeTablePos = tablePos || {};
+export default function Stage3D({ tables, tablePos }) {
+  // CRITICAL FIX: Fallback to empty object if props are missing
   const safeTables = tables || {};
-  const tableIds = Object.keys(safeTablePos); 
+  const safeTablePos = tablePos || {};
+  const tableIds = Object.keys(safeTablePos);
 
   return (
-    <div className="flex-1 h-full relative overflow-hidden bg-[#F5F5F7]" onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}>
-      
-      {/* Zoom Controls */}
-      <div className="absolute bottom-6 left-6 flex gap-2 z-50">
-        <button onClick={() => setViewScale(s => Math.max(0.5, s - 0.1))} className="bg-white p-2 rounded-lg shadow text-slate-600 hover:bg-slate-50 font-bold">-</button>
-        <span className="bg-white px-3 py-2 rounded-lg shadow text-xs font-medium text-slate-500 min-w-[60px] text-center">{(viewScale * 100).toFixed(0)}%</span>
-        <button onClick={() => setViewScale(s => Math.min(2, s + 0.1))} className="bg-white p-2 rounded-lg shadow text-slate-600 hover:bg-slate-50 font-bold">+</button>
-      </div>
+    <div className="w-full h-full bg-slate-900 absolute top-0 left-0 z-0">
+      <Canvas shadows camera={{ position: [0, 40, 40], fov: 45 }}>
+        <Sky sunPosition={[100, 20, 100]} />
+        <ambientLight intensity={0.7} />
+        <directionalLight 
+          position={[50, 50, 25]} 
+          intensity={1.5} 
+          castShadow 
+          shadow-mapSize={[2048, 2048]} 
+        />
+        <Environment preset="city" />
 
-      {/* The Canvas */}
-      <div 
-        ref={canvasRef}
-        className="w-full h-full origin-top-left transition-transform duration-75 ease-out"
-        style={{ transform: `scale(${viewScale})` }}
-        data-type="canvas-bg"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => e.preventDefault()}
-      >
-        {tableIds.map(id => {
-            const config = safeTablePos[id];
-            const guests = safeTables[id] || [];
-            
-            if (!config) return null;
+        <Grid position={[0, 0.01, 0]} args={[100, 100]} cellSize={5} cellThickness={1} cellColor="#94a3b8" sectionSize={25} sectionThickness={1.5} sectionColor="#64748b" fadeDistance={80} infiniteGrid />
+        
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]} receiveShadow>
+          <planeGeometry args={[200, 200]} />
+          <meshStandardMaterial color="#f8fafc" roughness={0.5} />
+        </mesh>
+        
+        <ContactShadows opacity={0.4} scale={50} blur={2} far={4} resolution={512} color="#000000" />
 
-            const isSelected = selectedTableId === id;
-            const hasConflict = conflictTableIds.includes(id);
-            const isRect = config.shape === 'rect';
-            
-            // Dimensions Logic
-            const w = config.width ? config.width * 10 : (isRect ? 180 : 120);
-            const h = config.height ? config.height * 10 : (isRect ? 120 : 120);
-            
-            return (
-                <div
-                    key={id}
-                    className={`absolute group cursor-move select-none flex items-center justify-center transition-shadow ${isSelected ? 'z-50' : 'z-10'}`}
-                    style={{ 
-                        left: `${config.x}%`, 
-                        top: `${config.y}%`, 
-                        width: `${w}px`, 
-                        height: `${h}px`,
-                        transform: 'translate(-50%, -50%)'
-                    }}
-                    onPointerDown={(e) => handlePointerDown(e, id)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                        e.stopPropagation();
-                        const guestName = window.draggedGuest;
-                        const source = window.draggedSource;
-                        if (guestName) moveGuest(guestName, source, id);
-                    }}
-                >
-                    <TableNode 
-                        id={id}
-                        config={config}
-                        seated={guests}
-                        isSelected={isSelected}
-                        isFull={guests.length >= (config.capacity || 8)}
-                        hasConflict={hasConflict}
-                        updateTableShape={updateTableShape}
-                        updateTableCapacity={updateTableCapacity}
-                        deleteTable={deleteTable}
-                    />
+        {tableIds.map((tableId) => {
+          const config = safeTablePos[tableId];
+          const guests = safeTables[tableId] || [];
 
-                    {/* Resize Handle */}
-                    {isSelected && (
-                        <div 
-                            className="absolute -bottom-1 -right-1 w-4 h-4 bg-indigo-500 rounded-full cursor-se-resize shadow-md z-50 hover:scale-125 transition"
-                            onPointerDown={(e) => handleResizePointerDown(e, id)}
-                        />
-                    )}
-                </div>
-            );
+          if (!config) return null;
+          
+          return (
+            <Table3D 
+              key={tableId} 
+              id={tableId} 
+              config={config} 
+              seated={guests}
+            />
+          );
         })}
-      </div>
+
+        <OrbitControls 
+          minPolarAngle={0} 
+          maxPolarAngle={Math.PI / 2.2} 
+          minDistance={10}
+          maxDistance={100}
+        />
+      </Canvas>
     </div>
   );
 }

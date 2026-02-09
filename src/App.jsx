@@ -8,9 +8,7 @@ import { jsPDF } from 'jspdf';
 import Auth from './components/Auth';
 import Sidebar from './components/SidebarPanel'; 
 import Stage from './components/Stage';
-// --- CRITICAL FIX: Importing Stage3D ---
 import Stage3D from './components/Stage3D'; 
-
 import PlanManager from './components/PlanManager';
 import useUndoRedo from './hooks/useUndoRedo';
 
@@ -380,4 +378,4 @@ export default function SeatingPlanner() {
       )}
     </div>
   );
-}"
+}
