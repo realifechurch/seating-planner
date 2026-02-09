@@ -13,9 +13,20 @@ const GROUP_COLORS = {
 
 const Chair = ({ x, z, rotation, guest }) => {
   const [hovered, setHover] = useState(false);
+  
   const guestGroup = guest && typeof guest === 'object' ? guest.group : 'None';
   const guestName = guest && typeof guest === 'object' ? guest.name : (typeof guest === 'string' ? guest : null);
+  
+  // --- CHILD DETECTION ---
+  const isChild = guest && typeof guest === 'object' && guest.meal && guest.meal.toLowerCase() === 'child';
+
   const cushionColor = guestName ? (GROUP_COLORS[guestGroup] || GROUP_COLORS['None']) : GROUP_COLORS['Empty'];
+
+  // --- SCALE LOGIC ---
+  // If hovered, grow slightly. 
+  // If it's a child, base scale is 0.75 (smaller chair).
+  const baseScale = isChild ? 0.75 : 1;
+  const finalScale = hovered ? baseScale * 1.1 : baseScale;
 
   return (
     <group 
@@ -23,19 +34,33 @@ const Chair = ({ x, z, rotation, guest }) => {
       rotation={[0, rotation, 0]}
       onPointerOver={(e) => { e.stopPropagation(); setHover(true); document.body.style.cursor = 'pointer'; }}
       onPointerOut={(e) => { setHover(false); document.body.style.cursor = 'auto'; }}
-      scale={hovered ? 1.1 : 1} 
+      scale={finalScale} 
     >
+      {/* Seat Cushion */}
       <mesh position={[0, 0.5, 0]} castShadow> <boxGeometry args={[0.5, 0.1, 0.5]} /> <meshStandardMaterial color={cushionColor} roughness={0.5} /> </mesh>
+      
+      {/* Backrest - (If child, maybe make it slightly different color or just keep scale) */}
       <mesh position={[0, 0.8, -0.23]} castShadow> <boxGeometry args={[0.5, 0.6, 0.05]} /> <meshStandardMaterial color={cushionColor} roughness={0.5} /> </mesh>
+      
+      {/* Legs */}
       <mesh position={[-0.2, 0.25, -0.2]}> <cylinderGeometry args={[0.04, 0.04, 0.5]} /> <meshStandardMaterial color="#64748b" /> </mesh>
       <mesh position={[0.2, 0.25, -0.2]}> <cylinderGeometry args={[0.04, 0.04, 0.5]} /> <meshStandardMaterial color="#64748b" /> </mesh>
       <mesh position={[-0.2, 0.25, 0.2]}> <cylinderGeometry args={[0.04, 0.04, 0.5]} /> <meshStandardMaterial color="#64748b" /> </mesh>
       <mesh position={[0.2, 0.25, 0.2]}> <cylinderGeometry args={[0.04, 0.04, 0.5]} /> <meshStandardMaterial color="#64748b" /> </mesh>
+      
+      {/* Name Tag */}
       {guestName && (
         <Html position={[0, 1.5, 0]} center transform sprite distanceFactor={7} zIndexRange={[100, 0]}>
-            <div className="bg-white/95 px-2 py-1 rounded-md shadow-lg border border-slate-200 backdrop-blur-sm flex items-center gap-2 select-none pointer-events-none">
+            <div className={`
+                px-2 py-1 rounded-md shadow-lg border backdrop-blur-sm flex items-center gap-2 select-none pointer-events-none
+                ${isChild ? 'bg-blue-50/95 border-blue-200' : 'bg-white/95 border-slate-200'}
+            `}>
                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: cushionColor }}></div>
-                <div className="flex flex-col"><span className="text-[10px] font-bold text-slate-800 whitespace-nowrap leading-tight">{guestName}</span></div>
+                <div className="flex flex-col">
+                    <span className="text-[10px] font-bold text-slate-800 whitespace-nowrap leading-tight">
+                        {guestName} {isChild && '🧸'}
+                    </span>
+                </div>
             </div>
         </Html>
       )}
@@ -52,7 +77,7 @@ export default function Table3D({ config, id, seated }) {
   const isDecor = config.type && config.type !== 'table';
 
   const chairs = useMemo(() => {
-    if (isDecor) return []; // No chairs for decor
+    if (isDecor) return []; 
     const items = [];
     const capacity = Math.max(1, config.capacity || 8);
     const guests = seated || [];
