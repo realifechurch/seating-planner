@@ -2,7 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 // This import caused the crash. By creating the file in Step 1, this will now work.
-import './index.css' 
+import './global.css' 
 
 // Simple Error Boundary to catch the "White Screen" cause
 class ErrorBoundary extends React.Component {
