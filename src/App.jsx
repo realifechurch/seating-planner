@@ -40,14 +40,25 @@ export default function SeatingPlanner() {
 
   const unassigned = currentModel?.unassigned || [];
   const tables = currentModel?.tables || {};
-  const tablePos = currentModel?.tablePos || {};
+  // The "Committed" positions (saved in history)
+  const committedTablePos = currentModel?.tablePos || {};
   const conflicts = currentModel?.conflicts || [];
 
   const [selectedTableId, setSelectedTableId] = useState(null);
+  
+  // --- DRAG & RESIZE STATE ---
   const [dragState, setDragState] = useState(null); 
   const [resizeState, setResizeState] = useState(null); 
+  
+  // --- TEMP STATE (For smooth dragging without crashing history) ---
+  const [tempTablePos, setTempTablePos] = useState(null);
+
   const [viewScale, setViewScale] = useState(1); 
   const canvasRef = useRef(null);
+
+  // --- MERGE LOGIC ---
+  // If we are dragging, show the temp positions. Otherwise show the committed ones.
+  const displayTablePos = tempTablePos || committedTablePos;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
@@ -57,6 +68,7 @@ export default function SeatingPlanner() {
 
   useEffect(() => { if (session?.user?.id) fetchPlans(); }, [session]);
 
+  // Auto-save logic
   useEffect(() => {
     if (!currentPlanId) return; 
     setSaveStatus('saving');
@@ -65,9 +77,12 @@ export default function SeatingPlanner() {
   }, [currentModel, planName]);
 
   const updateModel = (updates) => { setModel({ ...currentModel, ...updates }); };
+  
+  // These helpers update the History directly (for non-drag actions like adding/deleting)
   const setUnassigned = (val) => updateModel({ unassigned: typeof val === 'function' ? val(unassigned) : val });
   const setTables = (val) => updateModel({ tables: typeof val === 'function' ? val(tables) : val });
-  const setTablePos = (val) => updateModel({ tablePos: typeof val === 'function' ? val(tablePos) : val });
+  // We only use this for "instant" changes (like shape change), NOT for dragging
+  const setTablePosDirect = (val) => updateModel({ tablePos: typeof val === 'function' ? val(committedTablePos) : val });
   const setConflicts = (val) => updateModel({ conflicts: typeof val === 'function' ? val(conflicts) : val });
 
   const fetchPlans = async () => {
@@ -167,8 +182,8 @@ export default function SeatingPlanner() {
     if (source === 'sidebar') guestObj = unassigned.find(g => g.name === guestName);
     else guestObj = tables[source]?.find(g => g.name === guestName);
     if (!guestObj) guestObj = { id: crypto.randomUUID(), name: guestName, group: 'None', meal: 'Standard', diet: '' };
-    if (tablePos[target]?.capacity === 0) return; 
-    const targetCap = tablePos[target]?.capacity || 8;
+    if (committedTablePos[target]?.capacity === 0) return; 
+    const targetCap = committedTablePos[target]?.capacity || 8;
     if (target !== 'sidebar' && (tables[target]?.length || 0) >= targetCap) return alert("Table is full!");
     let nextUnassigned = [...unassigned];
     let nextTables = { ...tables };
@@ -179,17 +194,12 @@ export default function SeatingPlanner() {
     updateModel({ unassigned: nextUnassigned, tables: nextTables });
   };
 
-  // --- NEW FEATURE: SWAP GUESTS WITHIN A TABLE ---
   const swapGuests = (tableId, fromIndex, toIndex) => {
     const tableGuests = [...(tables[tableId] || [])];
-    // Ensure indices are valid
     if(fromIndex < 0 || fromIndex >= tableGuests.length || toIndex < 0 || toIndex >= tableGuests.length) return;
-    
-    // Swap
     const temp = tableGuests[fromIndex];
     tableGuests[fromIndex] = tableGuests[toIndex];
     tableGuests[toIndex] = temp;
-
     updateModel({ tables: { ...tables, [tableId]: tableGuests } });
   };
 
@@ -214,7 +224,7 @@ export default function SeatingPlanner() {
     const defaultHeight = shapeType === 'rect' ? 15 : null; 
     updateModel({
         tables: { ...tables, [nextId]: [] },
-        tablePos: { ...tablePos, [nextId]: { x: 50, y: 50, type: 'table', shape: shapeType, capacity: 8, width: defaultWidth, height: defaultHeight } }
+        tablePos: { ...committedTablePos, [nextId]: { x: 50, y: 50, type: 'table', shape: shapeType, capacity: 8, width: defaultWidth, height: defaultHeight } }
     });
     setSelectedTableId(nextId); 
   };
@@ -228,7 +238,7 @@ export default function SeatingPlanner() {
     if (type === 'dj') { w = 10; h = null; shape = 'square'; }
     updateModel({
         tables: { ...tables, [nextId]: [] },
-        tablePos: { ...tablePos, [nextId]: { x: 50, y: 50, type: type, shape: shape, capacity: 0, width: w, height: h } }
+        tablePos: { ...committedTablePos, [nextId]: { x: 50, y: 50, type: type, shape: shape, capacity: 0, width: w, height: h } }
     });
     setSelectedTableId(nextId);
   };
@@ -241,13 +251,13 @@ export default function SeatingPlanner() {
         nextUnassigned = [...nextUnassigned, ...rescued];
     }
     const newTables = { ...tables }; delete newTables[id];
-    const newTablePos = { ...tablePos }; delete newTablePos[id];
+    const newTablePos = { ...committedTablePos }; delete newTablePos[id];
     updateModel({ unassigned: nextUnassigned, tables: newTables, tablePos: newTablePos });
     setSelectedTableId(null);
   };
 
-  const updateTableShape = (id, newShape) => setTablePos(prev => ({ ...prev, [id]: { ...prev[id], shape: newShape } }));
-  const updateTableCapacity = (id, delta) => setTablePos(prev => {
+  const updateTableShape = (id, newShape) => setTablePosDirect(prev => ({ ...prev, [id]: { ...prev[id], shape: newShape } }));
+  const updateTableCapacity = (id, delta) => setTablePosDirect(prev => {
       if (prev[id].type !== 'table' && prev[id].type !== undefined) return prev;
       const current = prev[id].capacity || 8;
       const newCap = Math.max(2, Math.min(20, current + delta));
@@ -258,15 +268,25 @@ export default function SeatingPlanner() {
     if (e.target.closest('.no-drag')) return; 
     setSelectedTableId(id); e.preventDefault(); e.stopPropagation(); 
     if (!canvasRef.current) return; e.target.setPointerCapture(e.pointerId);
+    
+    // Initialize Drag Logic
     const rect = canvasRef.current.getBoundingClientRect();
-    const currentTable = tablePos[id];
+    const currentTable = committedTablePos[id];
+    
+    // Copy current REAL positions to TEMP positions so we can edit safely
+    setTempTablePos({ ...committedTablePos });
+    
     setDragState({ id: id, offsetX: ((e.clientX - rect.left) / rect.width) * 100 - currentTable.x, offsetY: ((e.clientY - rect.top) / rect.height) * 100 - currentTable.y });
   };
 
   const handleResizePointerDown = (e, id) => {
     e.preventDefault(); e.stopPropagation(); if (!canvasRef.current) return; e.target.setPointerCapture(e.pointerId);
     const rect = canvasRef.current.getBoundingClientRect();
-    const config = tablePos[id];
+    const config = committedTablePos[id];
+    
+    // Copy current REAL positions to TEMP positions
+    setTempTablePos({ ...committedTablePos });
+
     const fallbackWidth = config.shape === 'rect' ? (10 + (config.capacity || 8)) : 10;
     const fallbackHeight = config.shape === 'rect' ? 12 : null; 
     setResizeState({ id, startX: ((e.clientX - rect.left) / rect.width) * 100, startY: ((e.clientY - rect.top) / rect.height) * 100, startW: config.width || fallbackWidth, startH: config.height || fallbackHeight });
@@ -274,33 +294,53 @@ export default function SeatingPlanner() {
 
   const handlePointerMove = (e) => {
     if (!canvasRef.current) return;
+    // If not dragging/resizing, do nothing
+    if (!dragState && !resizeState) return;
+
     const rect = canvasRef.current.getBoundingClientRect();
     const curX = ((e.clientX - rect.left) / rect.width) * 100;
     const curY = ((e.clientY - rect.top) / rect.height) * 100;
+
+    // --- CRITICAL FIX: Update TEMP state, NOT Undo History ---
     if (resizeState) {
         e.preventDefault();
         const deltaX = curX - resizeState.startX;
         const deltaY = curY - resizeState.startY;
         let newWidth = resizeState.startW + (deltaX * 2);
-        const config = tablePos[resizeState.id];
+        // Safely access current config from temp state
+        const config = tempTablePos[resizeState.id] || committedTablePos[resizeState.id];
         const isRect = config.shape === 'rect';
         let newHeight = isRect ? (resizeState.startH + (deltaY * 2)) : null;
         newWidth = Math.max(3, Math.min(80, newWidth));
         if (isRect) newHeight = Math.max(3, Math.min(80, newHeight));
-        setTablePos(prev => ({ ...prev, [resizeState.id]: { ...prev[resizeState.id], width: newWidth, height: newHeight } }));
+        
+        setTempTablePos(prev => ({ ...prev, [resizeState.id]: { ...prev[resizeState.id], width: newWidth, height: newHeight } }));
     } else if (dragState) {
         e.preventDefault();
         let newX = curX - dragState.offsetX;
         let newY = curY - dragState.offsetY;
         newX = Math.max(0, Math.min(100, newX));
         newY = Math.max(0, Math.min(100, newY));
-        setTablePos(prev => ({ ...prev, [dragState.id]: { ...prev[dragState.id], x: newX, y: newY } }));
+        
+        setTempTablePos(prev => ({ ...prev, [dragState.id]: { ...prev[dragState.id], x: newX, y: newY } }));
     }
   };
 
   const handlePointerUp = (e) => {
-    if (dragState) { e.target.releasePointerCapture(e.pointerId); setDragState(null); }
-    if (resizeState) { e.target.releasePointerCapture(e.pointerId); setResizeState(null); }
+    // If we were dragging/resizing, this is the moment we SAVE to history
+    if (dragState || resizeState) {
+        e.target.releasePointerCapture(e.pointerId);
+        
+        // COMMIT the temp state to the Real History Model
+        if (tempTablePos) {
+            updateModel({ tablePos: tempTablePos });
+        }
+        
+        // Clear temp states
+        setDragState(null);
+        setResizeState(null);
+        setTempTablePos(null); // Switch back to reading from History
+    }
   };
 
   const updateGuestDetails = (id, updates) => {
@@ -382,13 +422,15 @@ export default function SeatingPlanner() {
       
       {viewMode === '2D' ? (
           <Stage 
-            canvasRef={canvasRef} tablePos={tablePos} tables={tables} selectedTableId={selectedTableId} dragState={dragState} resizeState={resizeState}
+            canvasRef={canvasRef} 
+            tablePos={displayTablePos} // <-- Using the smart display prop
+            tables={tables} selectedTableId={selectedTableId} dragState={dragState} resizeState={resizeState}
             handlePointerDown={handlePointerDown} handlePointerMove={handlePointerMove} handlePointerUp={handlePointerUp} handleResizePointerDown={handleResizePointerDown}
             moveGuest={moveGuest} swapGuests={swapGuests} addTable={addTable} updateTableShape={updateTableShape} updateTableCapacity={updateTableCapacity} deleteTable={deleteTable}
             conflictTableIds={conflictTableIds} viewScale={viewScale} setViewScale={setViewScale}
           />
       ) : (
-          <Stage3D tables={tables} tablePos={tablePos} />
+          <Stage3D tables={tables} tablePos={committedTablePos} />
       )}
     </div>
   );
