@@ -11,6 +11,7 @@ export default function Stage({
   handlePointerUp, 
   handleResizePointerDown,
   moveGuest, 
+  swapGuests, // --- NEW PROP
   deleteTable,
   addTable, 
   updateTableShape, 
@@ -53,13 +54,8 @@ export default function Stage({
             const hasConflict = conflictTableIds.includes(id);
             const isRect = config.shape === 'rect';
             
-            // --- FIX: DIMENSION LOGIC ---
-            // 1. Calculate Base Width
+            // Logic to keep circles geometric
             let w = config.width ? config.width * 10 : (isRect ? 180 : 120);
-            
-            // 2. Calculate Height
-            // If it is a Rectangle, use its own height or default.
-            // If it is a Circle/Square, FORCE height to equal width to keep it perfect.
             let h = isRect 
                 ? (config.height ? config.height * 10 : 120)
                 : w; 
@@ -94,6 +90,7 @@ export default function Stage({
                         updateTableShape={updateTableShape}
                         updateTableCapacity={updateTableCapacity}
                         deleteTable={deleteTable}
+                        swapGuests={swapGuests} // --- PASSING DOWN
                     />
 
                     {/* Resize Handle (Only when selected) */}

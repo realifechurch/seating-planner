@@ -179,6 +179,20 @@ export default function SeatingPlanner() {
     updateModel({ unassigned: nextUnassigned, tables: nextTables });
   };
 
+  // --- NEW FEATURE: SWAP GUESTS WITHIN A TABLE ---
+  const swapGuests = (tableId, fromIndex, toIndex) => {
+    const tableGuests = [...(tables[tableId] || [])];
+    // Ensure indices are valid
+    if(fromIndex < 0 || fromIndex >= tableGuests.length || toIndex < 0 || toIndex >= tableGuests.length) return;
+    
+    // Swap
+    const temp = tableGuests[fromIndex];
+    tableGuests[fromIndex] = tableGuests[toIndex];
+    tableGuests[toIndex] = temp;
+
+    updateModel({ tables: { ...tables, [tableId]: tableGuests } });
+  };
+
   useEffect(() => {
     const handleSidebarDrop = (e) => {
         const { guestName, source } = e.detail;
@@ -370,7 +384,7 @@ export default function SeatingPlanner() {
           <Stage 
             canvasRef={canvasRef} tablePos={tablePos} tables={tables} selectedTableId={selectedTableId} dragState={dragState} resizeState={resizeState}
             handlePointerDown={handlePointerDown} handlePointerMove={handlePointerMove} handlePointerUp={handlePointerUp} handleResizePointerDown={handleResizePointerDown}
-            moveGuest={moveGuest} addTable={addTable} updateTableShape={updateTableShape} updateTableCapacity={updateTableCapacity} deleteTable={deleteTable}
+            moveGuest={moveGuest} swapGuests={swapGuests} addTable={addTable} updateTableShape={updateTableShape} updateTableCapacity={updateTableCapacity} deleteTable={deleteTable}
             conflictTableIds={conflictTableIds} viewScale={viewScale} setViewScale={setViewScale}
           />
       ) : (

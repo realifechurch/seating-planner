@@ -7,7 +7,8 @@ const IconTrash = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="no
 export default function TableNode({ 
   id, config, seated, 
   isSelected, isFull, hasConflict,
-  updateTableShape, updateTableCapacity, deleteTable 
+  updateTableShape, updateTableCapacity, deleteTable,
+  swapGuests // --- RECEIVING PROP
 }) {
   
   const handleDelete = () => {
@@ -43,7 +44,7 @@ export default function TableNode({
             {hasConflict ? '!' : `T-${id}`}
         </div>
 
-        {/* Chair Grid - Restored to Grid Layout for Names */}
+        {/* Chair Grid */}
         <div className={`grid grid-cols-2 gap-1 w-full pointer-events-none px-2 overflow-hidden ${config.shape === 'circle' ? 'py-3' : 'py-1'}`}>
           {seated.map((guest, i) => {
              const guestName = typeof guest === 'string' ? guest : (guest?.name || 'Unknown');
@@ -54,15 +55,29 @@ export default function TableNode({
                     draggable="true"
                     onPointerDown={(e) => e.stopPropagation()}
                     
-                    // --- DRAG START HANDLER ---
+                    // --- DRAG START HANDLER (Adds Index info) ---
                     onDragStart={(e) => {
                         e.stopPropagation();
                         window.draggedGuest = guestName;
                         window.draggedSource = id;
-                        
-                        // Set standard data
+                        // Add index to payload for intra-table swapping
                         e.dataTransfer.effectAllowed = "move";
-                        e.dataTransfer.setData("text/plain", JSON.stringify({ name: guestName, source: id }));
+                        e.dataTransfer.setData("text/plain", JSON.stringify({ name: guestName, source: id, index: i }));
+                    }}
+
+                    // --- DROP HANDLER (Handles Swap) ---
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                        e.stopPropagation();
+                        try {
+                            const data = JSON.parse(e.dataTransfer.getData("text/plain"));
+                            // If dropped on the same table, perform a swap
+                            if (data.source === id && swapGuests) {
+                                swapGuests(id, data.index, i);
+                            }
+                        } catch (err) {
+                            // If JSON parse fails or data is missing, ignore
+                        }
                     }}
                 >
                     <GuestChair guest={guest} />
