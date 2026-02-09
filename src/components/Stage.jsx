@@ -1,5 +1,5 @@
 import React from 'react';
-import TableNode from './TableNode';
+import TableNode from './TableNode'; // <--- THIS IMPORT RESTORES THE UI
 
 export default function Stage({ 
   canvasRef, 
@@ -20,7 +20,7 @@ export default function Stage({
   setViewScale
 }) {
   
-  // --- SAFETY CHECKS ---
+  // --- SAFETY CHECKS (Keeps the app from crashing) ---
   const safeTablePos = tablePos || {};
   const safeTables = tables || {};
   const tableIds = Object.keys(safeTablePos); 
@@ -48,6 +48,7 @@ export default function Stage({
             const config = safeTablePos[id];
             const guests = safeTables[id] || [];
             
+            // Skip if data is corrupted
             if (!config) return null;
 
             const isSelected = selectedTableId === id;
@@ -78,6 +79,7 @@ export default function Stage({
                         if (guestName) moveGuest(guestName, source, id);
                     }}
                 >
+                    {/* --- THE FIX: Using TableNode again --- */}
                     <TableNode 
                         id={id}
                         config={config}
@@ -90,7 +92,7 @@ export default function Stage({
                         deleteTable={deleteTable}
                     />
 
-                    {/* Resize Handle */}
+                    {/* Resize Handle (Only when selected) */}
                     {isSelected && (
                         <div 
                             className="absolute -bottom-1 -right-1 w-4 h-4 bg-indigo-500 rounded-full cursor-se-resize shadow-md z-50 hover:scale-125 transition"
