@@ -15,7 +15,8 @@ export default function TableNode({
     if (window.confirm("Remove this element?")) deleteTable(id);
   };
 
-  const isDecor = config.type !== 'table';
+  // --- FIX: Strict check ensures legacy data (undefined type) defaults to Table ---
+  const isDecor = config.type && config.type !== 'table';
 
   // --- AESTHETIC LOGIC ---
   let containerClass = "w-full h-full flex flex-col items-center justify-center p-1.5 transition-all duration-300 ease-out select-none relative ";
@@ -35,6 +36,9 @@ export default function TableNode({
           containerClass += "bg-slate-200 border-2 border-slate-300 text-slate-500 ";
       } else if (config.type === 'dj') {
           containerClass += "bg-purple-900 border-2 border-purple-700 text-purple-200 ";
+      } else {
+          // Fallback for unknown decor
+          containerClass += "bg-gray-100 border-2 border-gray-200 ";
       }
       
       // Selection ring for decor
@@ -58,7 +62,7 @@ export default function TableNode({
       <div className={containerClass}>
         {/* IF DECOR: Show Label Only */}
         {isDecor && (
-            <div className="text-[10px] font-bold uppercase tracking-widest text-center px-2">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-center px-2 pointer-events-none">
                 {config.type === 'plant' ? '' : config.type}
             </div>
         )}
