@@ -8,7 +8,7 @@ import { jsPDF } from 'jspdf';
 import Auth from './components/Auth';
 import Sidebar from './components/SidebarPanel'; 
 import Stage from './components/Stage';
-// Ensure this file exists as Scene3D.jsx in /components/
+// Ensure this import matches your filename (Scene3D.jsx)
 import Scene3D from './components/Scene3D'; 
 
 import PlanManager from './components/PlanManager';
