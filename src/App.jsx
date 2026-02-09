@@ -8,8 +8,8 @@ import { jsPDF } from 'jspdf';
 import Auth from './components/Auth';
 import Sidebar from './components/SidebarPanel'; 
 import Stage from './components/Stage';
-// Ensure this import matches your filename (Scene3D.jsx)
-import Scene3D from './components/Scene3D'; 
+// --- CRITICAL FIX: Importing Stage3D (matching the filename in Step 1) ---
+import Stage3D from './components/Stage3D'; 
 
 import PlanManager from './components/PlanManager';
 import useUndoRedo from './hooks/useUndoRedo';
@@ -376,7 +376,7 @@ export default function SeatingPlanner() {
             conflictTableIds={conflictTableIds} viewScale={viewScale} setViewScale={setViewScale}
           />
       ) : (
-          <Scene3D tables={tables} tablePos={tablePos} />
+          <Stage3D tables={tables} tablePos={tablePos} />
       )}
     </div>
   );
