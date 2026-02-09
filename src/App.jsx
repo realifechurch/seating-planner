@@ -8,8 +8,7 @@ import { jsPDF } from 'jspdf';
 import Auth from './components/Auth';
 import Sidebar from './components/SidebarPanel'; 
 import Stage from './components/Stage';
-
-// --- FIXED IMPORT: Now pointing to Scene3D ---
+// Ensure this file exists as Scene3D.jsx in /components/
 import Scene3D from './components/Scene3D'; 
 
 import PlanManager from './components/PlanManager';
@@ -41,7 +40,6 @@ export default function SeatingPlanner() {
     conflicts: []
   });
 
-  // Safe defaults
   const unassigned = currentModel?.unassigned || [];
   const tables = currentModel?.tables || {};
   const tablePos = currentModel?.tablePos || {};
@@ -378,7 +376,6 @@ export default function SeatingPlanner() {
             conflictTableIds={conflictTableIds} viewScale={viewScale} setViewScale={setViewScale}
           />
       ) : (
-          /* Using the new Scene3D component with defensive safety props */
           <Scene3D tables={tables} tablePos={tablePos} />
       )}
     </div>
