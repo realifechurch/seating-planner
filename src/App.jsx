@@ -44,20 +44,12 @@ export default function SeatingPlanner() {
   const conflicts = currentModel?.conflicts || [];
 
   const [selectedTableId, setSelectedTableId] = useState(null);
-  
-  // --- DRAG & RESIZE STATE ---
   const [dragState, setDragState] = useState(null); 
   const [resizeState, setResizeState] = useState(null); 
-  
-  // --- TEMP STATE (For smooth dragging) ---
   const [tempTablePos, setTempTablePos] = useState(null);
-
   const [viewScale, setViewScale] = useState(1); 
   const canvasRef = useRef(null);
 
-  // --- DISPLAY LOGIC ---
-  // If dragging, show temp. If not, show committed. 
-  // Fallback to {} if both are missing to prevent render crash.
   const displayTablePos = tempTablePos || committedTablePos || {};
 
   useEffect(() => {
@@ -68,20 +60,23 @@ export default function SeatingPlanner() {
 
   useEffect(() => { if (session?.user?.id) fetchPlans(); }, [session]);
 
-  // Auto-save
+  // --- FIXED AUTO-SAVE LOGIC ---
   useEffect(() => {
-    if (!currentPlanId) return; 
+    // Only auto-save if there is a plan name. 
+    // We REMOVED "if (!currentPlanId)" so it can auto-save new plans too.
+    if (!planName) return; 
+    
     setSaveStatus('saving');
-    const timer = setTimeout(async () => { await savePlan(false, true); }, 3000); 
+    const timer = setTimeout(async () => { 
+        await savePlan(false, true); 
+    }, 3000); // 3 second debounce
+    
     return () => clearTimeout(timer);
   }, [currentModel, planName]);
 
   const updateModel = (updates) => { setModel({ ...currentModel, ...updates }); };
-  
-  // Direct History Updates
   const setUnassigned = (val) => updateModel({ unassigned: typeof val === 'function' ? val(unassigned) : val });
   const setTables = (val) => updateModel({ tables: typeof val === 'function' ? val(tables) : val });
-  // Used for instant updates (not dragging)
   const setTablePosDirect = (val) => updateModel({ tablePos: typeof val === 'function' ? val(committedTablePos) : val });
   const setConflicts = (val) => updateModel({ conflicts: typeof val === 'function' ? val(conflicts) : val });
 
@@ -129,25 +124,56 @@ export default function SeatingPlanner() {
     setPlanName(""); 
   };
 
+  // --- ROBUST SAVE FUNCTION ---
   const savePlan = async (asNewVersion = false, silent = false) => {
     if (!planName) return; 
     setSaveStatus('saving');
+    
     let thumbnailUrl = null;
     if (canvasRef.current && viewMode === '2D') {
         try { thumbnailUrl = await toPng(canvasRef.current, { pixelRatio: 0.5, cacheBust: true, width: 800 }); } 
         catch(e) { console.log('Thumbnail generation failed'); }
     }
-    const idToUse = asNewVersion ? null : currentPlanId;
+
     const nameToUse = asNewVersion ? `${planName} (Copy)` : planName;
-    const { data, error } = await supabase.from('seating_plans').upsert({ 
-      id: idToUse, name: nameToUse, thumbnail: thumbnailUrl, data: { ...currentModel }, user_id: session.user.id 
-    }).select();
-    if (!error) { 
+    
+    const payload = { 
+      name: nameToUse, 
+      thumbnail: thumbnailUrl, 
+      data: { ...currentModel }, 
+      user_id: session.user.id,
+      updated_at: new Date().toISOString()
+    };
+
+    let result;
+
+    // LOGIC: Explicitly separate UPDATE from INSERT to prevent errors
+    if (currentPlanId && !asNewVersion) {
+        // Update existing plan
+        result = await supabase
+            .from('seating_plans')
+            .update(payload)
+            .eq('id', currentPlanId)
+            .select();
+    } else {
+        // Insert new plan
+        result = await supabase
+            .from('seating_plans')
+            .insert(payload)
+            .select();
+    }
+
+    const { data, error } = result;
+
+    if (!error && data && data.length > 0) { 
       setCurrentPlanId(data[0].id); 
       if (asNewVersion) setPlanName(nameToUse);
       if (!silent) fetchPlans(); 
       setSaveStatus('saved');
-    } else { setSaveStatus('error'); }
+    } else { 
+      console.error("Save Error:", error);
+      setSaveStatus('error'); 
+    }
   };
 
   const handleSmartFileUpload = (e) => {
@@ -274,9 +300,7 @@ export default function SeatingPlanner() {
     const currentTable = committedTablePos[id];
     if (!currentTable) return;
 
-    // --- CRITICAL: Initialize temp state immediately ---
     setTempTablePos({ ...committedTablePos });
-    
     setDragState({ id: id, offsetX: ((e.clientX - rect.left) / rect.width) * 100 - currentTable.x, offsetY: ((e.clientY - rect.top) / rect.height) * 100 - currentTable.y });
   };
 
@@ -286,9 +310,7 @@ export default function SeatingPlanner() {
     const config = committedTablePos[id];
     if (!config) return;
 
-    // --- CRITICAL: Initialize temp state immediately ---
     setTempTablePos({ ...committedTablePos });
-
     const fallbackWidth = config.shape === 'rect' ? (10 + (config.capacity || 8)) : 10;
     const fallbackHeight = config.shape === 'rect' ? 12 : null; 
     setResizeState({ id, startX: ((e.clientX - rect.left) / rect.width) * 100, startY: ((e.clientY - rect.top) / rect.height) * 100, startW: config.width || fallbackWidth, startH: config.height || fallbackHeight });
@@ -309,15 +331,12 @@ export default function SeatingPlanner() {
         let newWidth = resizeState.startW + (deltaX * 2);
         
         setTempTablePos(prev => {
-            // --- CRITICAL: Crash Guard ---
             if (!prev || !prev[resizeState.id]) return prev || committedTablePos;
-            
             const config = prev[resizeState.id];
             const isRect = config.shape === 'rect';
             let newHeight = isRect ? (resizeState.startH + (deltaY * 2)) : null;
             newWidth = Math.max(3, Math.min(80, newWidth));
             if (isRect) newHeight = Math.max(3, Math.min(80, newHeight));
-            
             return { ...prev, [resizeState.id]: { ...prev[resizeState.id], width: newWidth, height: newHeight } };
         });
 
@@ -329,12 +348,8 @@ export default function SeatingPlanner() {
         newY = Math.max(0, Math.min(100, newY));
         
         setTempTablePos(prev => {
-            // --- CRITICAL: Crash Guard ---
-            // If prev is null (race condition), fallback to committed or return null (no-op)
             if (!prev) return committedTablePos;
-            // If table key missing, do nothing
             if (!prev[dragState.id]) return prev;
-
             return { ...prev, [dragState.id]: { ...prev[dragState.id], x: newX, y: newY } };
         });
     }
@@ -343,12 +358,9 @@ export default function SeatingPlanner() {
   const handlePointerUp = (e) => {
     if (dragState || resizeState) {
         e.target.releasePointerCapture(e.pointerId);
-        
-        // Only commit if we actually have a valid temp state
         if (tempTablePos && Object.keys(tempTablePos).length > 0) {
             updateModel({ tablePos: tempTablePos });
         }
-        
         setDragState(null);
         setResizeState(null);
         setTempTablePos(null); 
