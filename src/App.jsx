@@ -8,7 +8,10 @@ import { jsPDF } from 'jspdf';
 import Auth from './components/Auth';
 import Sidebar from './components/SidebarPanel'; 
 import Stage from './components/Stage';
-import Stage3D from './components/Stage3D'; 
+
+// --- CRITICAL FIX: IMPORT THE NEW FILENAME "Scene3D" ---
+import Scene3D from './components/Scene3D'; 
+
 import PlanManager from './components/PlanManager';
 import useUndoRedo from './hooks/useUndoRedo';
 
@@ -38,7 +41,6 @@ export default function SeatingPlanner() {
     conflicts: []
   });
 
-  // Safe destructuring with defaults to prevent crashes
   const unassigned = currentModel?.unassigned || [];
   const tables = currentModel?.tables || {};
   const tablePos = currentModel?.tablePos || {};
@@ -319,8 +321,6 @@ export default function SeatingPlanner() {
 
   const removeConflict = (conflictId) => { updateModel({ conflicts: conflicts.filter(c => c.id !== conflictId) }); };
 
-  // --- FIX: SAFE CONFLICT CALCULATION ---
-  // We explicitly fallback to {} so Object.entries never receives undefined
   const conflictTableIds = Object.entries(tables || {}).reduce((acc, [tableId, guests]) => {
       const guestIdsOnTable = new Set(guests.map(g => g.id));
       const hasConflict = conflicts.some(c => guestIdsOnTable.has(c.guest1Id) && guestIdsOnTable.has(c.guest2Id));
@@ -377,7 +377,8 @@ export default function SeatingPlanner() {
             conflictTableIds={conflictTableIds} viewScale={viewScale} setViewScale={setViewScale}
           />
       ) : (
-          <Stage3D tables={tables} tablePos={tablePos} />
+          /* --- CRITICAL FIX: USE THE NEW COMPONENT "Scene3D" --- */
+          <Scene3D tables={tables} tablePos={tablePos} />
       )}
     </div>
   );
