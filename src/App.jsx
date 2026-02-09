@@ -44,13 +44,21 @@ export default function SeatingPlanner() {
   const conflicts = currentModel?.conflicts || [];
 
   const [selectedTableId, setSelectedTableId] = useState(null);
+  
+  // --- DRAG & RESIZE STATE ---
   const [dragState, setDragState] = useState(null); 
   const [resizeState, setResizeState] = useState(null); 
+  
+  // --- TEMP STATE (For smooth dragging) ---
   const [tempTablePos, setTempTablePos] = useState(null);
+
   const [viewScale, setViewScale] = useState(1); 
   const canvasRef = useRef(null);
 
-  const displayTablePos = tempTablePos || committedTablePos;
+  // --- DISPLAY LOGIC ---
+  // If dragging, show temp. If not, show committed. 
+  // Fallback to {} if both are missing to prevent render crash.
+  const displayTablePos = tempTablePos || committedTablePos || {};
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
@@ -60,6 +68,7 @@ export default function SeatingPlanner() {
 
   useEffect(() => { if (session?.user?.id) fetchPlans(); }, [session]);
 
+  // Auto-save
   useEffect(() => {
     if (!currentPlanId) return; 
     setSaveStatus('saving');
@@ -68,8 +77,11 @@ export default function SeatingPlanner() {
   }, [currentModel, planName]);
 
   const updateModel = (updates) => { setModel({ ...currentModel, ...updates }); };
+  
+  // Direct History Updates
   const setUnassigned = (val) => updateModel({ unassigned: typeof val === 'function' ? val(unassigned) : val });
   const setTables = (val) => updateModel({ tables: typeof val === 'function' ? val(tables) : val });
+  // Used for instant updates (not dragging)
   const setTablePosDirect = (val) => updateModel({ tablePos: typeof val === 'function' ? val(committedTablePos) : val });
   const setConflicts = (val) => updateModel({ conflicts: typeof val === 'function' ? val(conflicts) : val });
 
@@ -220,16 +232,13 @@ export default function SeatingPlanner() {
   const addDecor = (type) => {
     const nextId = Object.keys(tables).length + 1;
     let w = 15, h = 15, shape = 'rect';
-    // --- NEW LOGIC FOR STAGE AND DECOR ---
     if (type === 'dancefloor') { w = 30; h = 25; }
-    if (type === 'stage') { w = 25; h = 15; } // Added Stage dimensions
+    if (type === 'stage') { w = 25; h = 15; }
     if (type === 'bar') { w = 20; h = 10; }
     if (type === 'plant') { w = 5; h = null; shape = 'circle'; }
     if (type === 'dj') { w = 10; h = null; shape = 'square'; }
-    
     updateModel({
         tables: { ...tables, [nextId]: [] },
-        // Ensure capacity is 0 so it's not treated as a seatable table
         tablePos: { ...committedTablePos, [nextId]: { x: 50, y: 50, type: type, shape: shape, capacity: 0, width: w, height: h } }
     });
     setSelectedTableId(nextId);
@@ -263,6 +272,9 @@ export default function SeatingPlanner() {
     
     const rect = canvasRef.current.getBoundingClientRect();
     const currentTable = committedTablePos[id];
+    if (!currentTable) return;
+
+    // --- CRITICAL: Initialize temp state immediately ---
     setTempTablePos({ ...committedTablePos });
     
     setDragState({ id: id, offsetX: ((e.clientX - rect.left) / rect.width) * 100 - currentTable.x, offsetY: ((e.clientY - rect.top) / rect.height) * 100 - currentTable.y });
@@ -272,6 +284,9 @@ export default function SeatingPlanner() {
     e.preventDefault(); e.stopPropagation(); if (!canvasRef.current) return; e.target.setPointerCapture(e.pointerId);
     const rect = canvasRef.current.getBoundingClientRect();
     const config = committedTablePos[id];
+    if (!config) return;
+
+    // --- CRITICAL: Initialize temp state immediately ---
     setTempTablePos({ ...committedTablePos });
 
     const fallbackWidth = config.shape === 'rect' ? (10 + (config.capacity || 8)) : 10;
@@ -292,13 +307,20 @@ export default function SeatingPlanner() {
         const deltaX = curX - resizeState.startX;
         const deltaY = curY - resizeState.startY;
         let newWidth = resizeState.startW + (deltaX * 2);
-        const config = tempTablePos[resizeState.id] || committedTablePos[resizeState.id];
-        const isRect = config.shape === 'rect';
-        let newHeight = isRect ? (resizeState.startH + (deltaY * 2)) : null;
-        newWidth = Math.max(3, Math.min(80, newWidth));
-        if (isRect) newHeight = Math.max(3, Math.min(80, newHeight));
         
-        setTempTablePos(prev => ({ ...prev, [resizeState.id]: { ...prev[resizeState.id], width: newWidth, height: newHeight } }));
+        setTempTablePos(prev => {
+            // --- CRITICAL: Crash Guard ---
+            if (!prev || !prev[resizeState.id]) return prev || committedTablePos;
+            
+            const config = prev[resizeState.id];
+            const isRect = config.shape === 'rect';
+            let newHeight = isRect ? (resizeState.startH + (deltaY * 2)) : null;
+            newWidth = Math.max(3, Math.min(80, newWidth));
+            if (isRect) newHeight = Math.max(3, Math.min(80, newHeight));
+            
+            return { ...prev, [resizeState.id]: { ...prev[resizeState.id], width: newWidth, height: newHeight } };
+        });
+
     } else if (dragState) {
         e.preventDefault();
         let newX = curX - dragState.offsetX;
@@ -306,16 +328,27 @@ export default function SeatingPlanner() {
         newX = Math.max(0, Math.min(100, newX));
         newY = Math.max(0, Math.min(100, newY));
         
-        setTempTablePos(prev => ({ ...prev, [dragState.id]: { ...prev[dragState.id], x: newX, y: newY } }));
+        setTempTablePos(prev => {
+            // --- CRITICAL: Crash Guard ---
+            // If prev is null (race condition), fallback to committed or return null (no-op)
+            if (!prev) return committedTablePos;
+            // If table key missing, do nothing
+            if (!prev[dragState.id]) return prev;
+
+            return { ...prev, [dragState.id]: { ...prev[dragState.id], x: newX, y: newY } };
+        });
     }
   };
 
   const handlePointerUp = (e) => {
     if (dragState || resizeState) {
         e.target.releasePointerCapture(e.pointerId);
-        if (tempTablePos) {
+        
+        // Only commit if we actually have a valid temp state
+        if (tempTablePos && Object.keys(tempTablePos).length > 0) {
             updateModel({ tablePos: tempTablePos });
         }
+        
         setDragState(null);
         setResizeState(null);
         setTempTablePos(null); 
@@ -402,7 +435,7 @@ export default function SeatingPlanner() {
       {viewMode === '2D' ? (
           <Stage 
             canvasRef={canvasRef} 
-            tablePos={displayTablePos}
+            tablePos={displayTablePos} 
             tables={tables} selectedTableId={selectedTableId} dragState={dragState} resizeState={resizeState}
             handlePointerDown={handlePointerDown} handlePointerMove={handlePointerMove} handlePointerUp={handlePointerUp} handleResizePointerDown={handleResizePointerDown}
             moveGuest={moveGuest} swapGuests={swapGuests} addTable={addTable} updateTableShape={updateTableShape} updateTableCapacity={updateTableCapacity} deleteTable={deleteTable}
