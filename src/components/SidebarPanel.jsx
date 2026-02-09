@@ -9,6 +9,7 @@ const IconSearch = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="n
 const IconFolder = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>;
 const IconUndo = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>;
 const IconRedo = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7"/></svg>;
+const IconSave = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>;
 
 const GROUP_COLORS = [
   { name: 'None', color: 'bg-slate-300' },
@@ -134,9 +135,14 @@ export default function Sidebar({
         <div className="space-y-3">
              <input value={planName} onChange={e => setPlanName(e.target.value)} placeholder="Untitled Event" className="w-full bg-transparent border-none p-0 text-xl font-semibold text-[#1D1D1F] placeholder-slate-300 focus:ring-0 tracking-tight"/>
              
+             {/* --- ADDED SAVE BUTTON ROW --- */}
              <div className="flex gap-2">
                 <button onClick={openPlanManager} className="flex-1 flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-600 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wide transition">
                     <IconFolder /> Open Plan
+                </button>
+                {/* SAVE BUTTON */}
+                <button onClick={() => savePlan(false, false)} className="w-8 flex items-center justify-center bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl transition" title="Save Now">
+                    <IconSave />
                 </button>
                 <div className="flex gap-1">
                     <button onClick={undo} disabled={!canUndo} className="w-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 rounded-xl transition"><IconUndo /></button>
@@ -231,7 +237,6 @@ export default function Sidebar({
                 <div>
                     <h3 className="text-[10px] uppercase font-bold text-slate-400 mb-3 tracking-widest pl-1">Elements</h3>
                     <div className="grid grid-cols-2 gap-2">
-                        {/* --- ADDED 'STAGE' BUTTON HERE --- */}
                         {['dancefloor', 'stage', 'bar', 'plant', 'dj'].map(type => (
                             <button key={type} onClick={() => addDecor(type)} className="bg-white hover:bg-slate-50 border border-slate-100 p-3 rounded-2xl text-xs font-semibold text-slate-600 transition shadow-sm capitalize active:scale-[0.98]">{type}</button>
                         ))}
