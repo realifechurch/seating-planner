@@ -6,7 +6,6 @@ import { jsPDF } from 'jspdf';
 
 // --- COMPONENT IMPORTS ---
 import Auth from './components/Auth';
-// IMPORTANT: Importing SidebarPanel to ensure we get the fresh file
 import Sidebar from './components/SidebarPanel'; 
 import Stage from './components/Stage';
 import Stage3D from './components/Stage3D'; 
@@ -18,23 +17,20 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
-// --- ICONS FOR TOGGLE ---
+// --- ICONS ---
 const Icon3D = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5"/><path d="M12 12v9"/><path d="M12 12L4 7.5"/></svg>;
 const Icon2D = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>;
 
 export default function SeatingPlanner() {
-  // --- GLOBAL STATE ---
   const [session, setSession] = useState(null);
   const [plans, setPlans] = useState([]);
   const [currentPlanId, setCurrentPlanId] = useState(null);
   const [planName, setPlanName] = useState("");
   const [saveStatus, setSaveStatus] = useState('saved'); 
   const [isPlanManagerOpen, setIsPlanManagerOpen] = useState(false);
-  
-  // --- VIEW MODE STATE ---
-  const [viewMode, setViewMode] = useState('2D'); // '2D' or '3D'
+  const [viewMode, setViewMode] = useState('2D'); 
 
-  // --- HISTORY MANAGEMENT (Undo/Redo) ---
+  // --- HISTORY ---
   const { state: currentModel, setContent: setModel, undo, redo, canUndo, canRedo, reset: resetHistory } = useUndoRedo({
     unassigned: [],
     tables: {},
@@ -42,18 +38,18 @@ export default function SeatingPlanner() {
     conflicts: []
   });
 
-  // Destructure for easy access
-  const { unassigned, tables, tablePos, conflicts } = currentModel;
+  // Safe destructuring with defaults to prevent crashes
+  const unassigned = currentModel?.unassigned || [];
+  const tables = currentModel?.tables || {};
+  const tablePos = currentModel?.tablePos || {};
+  const conflicts = currentModel?.conflicts || [];
 
-  // --- UX STATE ---
   const [selectedTableId, setSelectedTableId] = useState(null);
   const [dragState, setDragState] = useState(null); 
   const [resizeState, setResizeState] = useState(null); 
   const [viewScale, setViewScale] = useState(1); 
-
   const canvasRef = useRef(null);
 
-  // --- AUTH & INIT ---
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => setSession(session));
@@ -62,26 +58,19 @@ export default function SeatingPlanner() {
 
   useEffect(() => { if (session?.user?.id) fetchPlans(); }, [session]);
 
-  // --- AUTO SAVE LOGIC ---
   useEffect(() => {
     if (!currentPlanId) return; 
     setSaveStatus('saving');
-    
-    const timer = setTimeout(async () => {
-        await savePlan(false, true); 
-    }, 3000); 
-
+    const timer = setTimeout(async () => { await savePlan(false, true); }, 3000); 
     return () => clearTimeout(timer);
   }, [currentModel, planName]);
 
-  // --- STATE HELPERS (Wrapped for History) ---
   const updateModel = (updates) => { setModel({ ...currentModel, ...updates }); };
   const setUnassigned = (val) => updateModel({ unassigned: typeof val === 'function' ? val(unassigned) : val });
   const setTables = (val) => updateModel({ tables: typeof val === 'function' ? val(tables) : val });
   const setTablePos = (val) => updateModel({ tablePos: typeof val === 'function' ? val(tablePos) : val });
   const setConflicts = (val) => updateModel({ conflicts: typeof val === 'function' ? val(conflicts) : val });
 
-  // --- DATABASE LOGIC ---
   const fetchPlans = async () => {
     try {
       const { data } = await supabase.from('seating_plans').select('*').eq('user_id', session.user.id).order('created_at', { ascending: false });
@@ -93,21 +82,17 @@ export default function SeatingPlanner() {
     setPlanName(p.name);
     setCurrentPlanId(p.id);
     const safeData = p.data || {};
-    
     const normalizeGuests = (list) => {
         if (!Array.isArray(list)) return [];
         return list.map(g => (typeof g === 'string' ? { id: crypto.randomUUID(), name: g, group: 'None', meal: 'Standard', diet: '' } : g));
     };
-
     const loadedState = {
         unassigned: normalizeGuests(safeData.unassigned),
         tables: {},
         tablePos: safeData.tablePos || {},
         conflicts: safeData.conflicts || []
     };
-    
     Object.keys(safeData.tables || {}).forEach(key => { loadedState.tables[key] = normalizeGuests(safeData.tables[key]); });
-
     resetHistory(loadedState);
     setSelectedTableId(null);
     setIsPlanManagerOpen(false);
@@ -133,99 +118,65 @@ export default function SeatingPlanner() {
   const savePlan = async (asNewVersion = false, silent = false) => {
     if (!planName) return; 
     setSaveStatus('saving');
-
     let thumbnailUrl = null;
-    // Only capture thumbnail if we are in 2D mode
     if (canvasRef.current && viewMode === '2D') {
-        try {
-            thumbnailUrl = await toPng(canvasRef.current, { pixelRatio: 0.5, cacheBust: true, width: 800 });
-        } catch(e) { console.log('Thumbnail generation failed'); }
+        try { thumbnailUrl = await toPng(canvasRef.current, { pixelRatio: 0.5, cacheBust: true, width: 800 }); } 
+        catch(e) { console.log('Thumbnail generation failed'); }
     }
-
     const idToUse = asNewVersion ? null : currentPlanId;
     const nameToUse = asNewVersion ? `${planName} (Copy)` : planName;
-    
     const { data, error } = await supabase.from('seating_plans').upsert({ 
-      id: idToUse, name: nameToUse, 
-      thumbnail: thumbnailUrl, 
-      data: { ...currentModel }, 
-      user_id: session.user.id 
+      id: idToUse, name: nameToUse, thumbnail: thumbnailUrl, data: { ...currentModel }, user_id: session.user.id 
     }).select();
-
     if (!error) { 
       setCurrentPlanId(data[0].id); 
       if (asNewVersion) setPlanName(nameToUse);
       if (!silent) fetchPlans(); 
       setSaveStatus('saved');
-    } else {
-      setSaveStatus('error');
-    }
+    } else { setSaveStatus('error'); }
   };
 
-  // --- FILE HANDLING ---
   const handleSmartFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     Papa.parse(file, { 
-        header: true, 
-        skipEmptyLines: true, 
+        header: true, skipEmptyLines: true, 
         complete: (results) => {
             const csvRows = results.data.filter(row => row.Name || Object.values(row)[0]);
             const incomingDataMap = new Map();
             csvRows.forEach(row => {
                 const name = row.Name || Object.values(row)[0];
-                if (name) {
-                    incomingDataMap.set(name, {
-                        name: name,
-                        group: row.Group || 'None',
-                        meal: row.Meal || 'Standard',
-                        diet: row.Diet || ''
-                    });
-                }
+                if (name) incomingDataMap.set(name, { name: name, group: row.Group || 'None', meal: row.Meal || 'Standard', diet: row.Diet || '' });
             });
-            
             let nextUnassigned = unassigned.map(g => incomingDataMap.has(g.name) ? { ...g, ...incomingDataMap.get(g.name) } : g);
             const nextTables = { ...tables };
             Object.keys(nextTables).forEach(tableId => {
                 nextTables[tableId] = nextTables[tableId].map(g => incomingDataMap.has(g.name) ? { ...g, ...incomingDataMap.get(g.name) } : g);
             });
-
             const allCurrentNames = new Set([ ...nextUnassigned.map(g => g.name), ...Object.values(nextTables).flat().map(g => g.name) ]);
             incomingDataMap.forEach((data, name) => {
-                if (!allCurrentNames.has(name)) {
-                    nextUnassigned.push({ id: crypto.randomUUID(), ...data });
-                }
+                if (!allCurrentNames.has(name)) nextUnassigned.push({ id: crypto.randomUUID(), ...data });
             });
-
             updateModel({ unassigned: nextUnassigned, tables: nextTables });
         }
     });
   };
 
-  // --- ACTIONS & GUEST MANAGEMENT ---
   const moveGuest = (guestObjOrName, source, target) => {
     let guestObj = null;
     const guestName = typeof guestObjOrName === 'string' ? guestObjOrName : guestObjOrName.name;
-
     if (source === 'sidebar') guestObj = unassigned.find(g => g.name === guestName);
     else guestObj = tables[source]?.find(g => g.name === guestName);
-
     if (!guestObj) guestObj = { id: crypto.randomUUID(), name: guestName, group: 'None', meal: 'Standard', diet: '' };
-
     if (tablePos[target]?.capacity === 0) return; 
     const targetCap = tablePos[target]?.capacity || 8;
     if (target !== 'sidebar' && (tables[target]?.length || 0) >= targetCap) return alert("Table is full!");
-
     let nextUnassigned = [...unassigned];
     let nextTables = { ...tables };
-
     if (source === 'sidebar') nextUnassigned = nextUnassigned.filter(g => g.name !== guestName);
     else nextTables[source] = nextTables[source].filter(g => (typeof g === 'string' ? g : g.name) !== guestName);
-
     if (target === 'sidebar') nextUnassigned.push(guestObj);
     else nextTables[target] = [...(nextTables[target] || []), guestObj];
-
     updateModel({ unassigned: nextUnassigned, tables: nextTables });
   };
 
@@ -278,7 +229,6 @@ export default function SeatingPlanner() {
     }
     const newTables = { ...tables }; delete newTables[id];
     const newTablePos = { ...tablePos }; delete newTablePos[id];
-    
     updateModel({ unassigned: nextUnassigned, tables: newTables, tablePos: newTablePos });
     setSelectedTableId(null);
   };
@@ -314,7 +264,6 @@ export default function SeatingPlanner() {
     const rect = canvasRef.current.getBoundingClientRect();
     const curX = ((e.clientX - rect.left) / rect.width) * 100;
     const curY = ((e.clientY - rect.top) / rect.height) * 100;
-
     if (resizeState) {
         e.preventDefault();
         const deltaX = curX - resizeState.startX;
@@ -370,79 +319,40 @@ export default function SeatingPlanner() {
 
   const removeConflict = (conflictId) => { updateModel({ conflicts: conflicts.filter(c => c.id !== conflictId) }); };
 
-  const conflictTableIds = Object.entries(tables).reduce((acc, [tableId, guests]) => {
+  // --- FIX: SAFE CONFLICT CALCULATION ---
+  // We explicitly fallback to {} so Object.entries never receives undefined
+  const conflictTableIds = Object.entries(tables || {}).reduce((acc, [tableId, guests]) => {
       const guestIdsOnTable = new Set(guests.map(g => g.id));
       const hasConflict = conflicts.some(c => guestIdsOnTable.has(c.guest1Id) && guestIdsOnTable.has(c.guest2Id));
       if (hasConflict) acc.push(tableId);
       return acc;
   }, []);
 
-  const allGuests = [ ...unassigned, ...Object.values(tables).flat() ].sort((a,b) => a.name.localeCompare(b.name));
+  const allGuests = [ ...unassigned, ...Object.values(tables || {}).flat() ].sort((a,b) => a.name.localeCompare(b.name));
 
   if (!session) return <Auth supabase={supabase} />;
 
   return (
     <div className="flex h-screen w-screen bg-[#F5F5F7] text-[#1D1D1F] overflow-hidden font-sans relative selection:bg-indigo-500/20">
-      
-      {/* Background */}
       <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-indigo-200/20 rounded-full blur-[120px] pointer-events-none"></div>
       <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-rose-200/20 rounded-full blur-[120px] pointer-events-none"></div>
 
-      {/* --- FLOATING 3D TOGGLE (NEW) --- */}
       <div className="absolute bottom-6 right-6 z-[60] flex gap-2">
         <div className="bg-white/90 backdrop-blur-md p-1 rounded-xl shadow-xl border border-white/50 flex gap-1 ring-1 ring-black/5">
-            <button 
-                onClick={() => setViewMode('2D')}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all duration-300 ${
-                    viewMode === '2D' ? 'bg-[#1D1D1F] text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'
-                }`}
-            >
-                <Icon2D /> 2D
-            </button>
-            <button 
-                onClick={() => setViewMode('3D')}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all duration-300 ${
-                    viewMode === '3D' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'
-                }`}
-            >
-                <Icon3D /> 3D
-            </button>
+            <button onClick={() => setViewMode('2D')} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all duration-300 ${viewMode === '2D' ? 'bg-[#1D1D1F] text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`}><Icon2D /> 2D</button>
+            <button onClick={() => setViewMode('3D')} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all duration-300 ${viewMode === '3D' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-100'}`}><Icon3D /> 3D</button>
         </div>
       </div>
 
-      {isPlanManagerOpen && (
-          <PlanManager 
-            plans={plans} 
-            onClose={() => setIsPlanManagerOpen(false)} 
-            onLoad={loadPlan} 
-            onDelete={handleDeletePlan} 
-          />
-      )}
+      {isPlanManagerOpen && ( <PlanManager plans={plans} onClose={() => setIsPlanManagerOpen(false)} onLoad={loadPlan} onDelete={handleDeletePlan} /> )}
 
       <Sidebar 
-        unassigned={unassigned || []} 
-        setUnassigned={setUnassigned}
-        plans={plans} 
-        planName={planName} 
-        setPlanName={setPlanName}
-        savePlan={savePlan} 
-        saveStatus={saveStatus}
-        undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo}
-        openPlanManager={() => { fetchPlans(); setIsPlanManagerOpen(true); }}
-        handleLogout={handleLogout}
-        userEmail={session.user.email} 
-        handleFileUpload={handleSmartFileUpload}
-        tables={tables || {}} 
-        autoAssignGroup={() => {}} 
-        addDecor={addDecor}
-        updateGuestDetails={updateGuestDetails}
-        conflicts={conflicts || []} 
-        addConflict={addConflict} 
-        removeConflict={removeConflict}
-        allGuests={allGuests} 
-        unseatAll={handleUnseatAll} 
-        clearUnseatedList={handleClearUnseatedList}
-        exportToPDF={async () => {
+        unassigned={unassigned} setUnassigned={setUnassigned} plans={plans} planName={planName} setPlanName={setPlanName}
+        savePlan={savePlan} saveStatus={saveStatus} undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo}
+        openPlanManager={() => { fetchPlans(); setIsPlanManagerOpen(true); }} handleLogout={handleLogout} userEmail={session.user.email} 
+        handleFileUpload={handleSmartFileUpload} tables={tables} autoAssignGroup={() => {}} addDecor={addDecor} updateGuestDetails={updateGuestDetails}
+        conflicts={conflicts} addConflict={addConflict} removeConflict={removeConflict} allGuests={allGuests} unseatAll={handleUnseatAll} 
+        clearUnseatedList={handleClearUnseatedList} exportToPDF={async () => {
             if (!canvasRef.current || viewMode !== '2D') return alert("Switch to 2D view to export PDF.");
             try {
               const dataUrl = await toPng(canvasRef.current, { cacheBust: true, pixelRatio: 3 });
@@ -459,26 +369,15 @@ export default function SeatingPlanner() {
         }}
       />
       
-      {/* --- CONDITIONAL RENDER: 2D vs 3D --- */}
       {viewMode === '2D' ? (
           <Stage 
-            canvasRef={canvasRef}
-            tablePos={tablePos} tables={tables}
-            selectedTableId={selectedTableId} dragState={dragState} resizeState={resizeState}
-            handlePointerDown={handlePointerDown} handlePointerMove={handlePointerMove} handlePointerUp={handlePointerUp}
-            handleResizePointerDown={handleResizePointerDown}
-            moveGuest={moveGuest}
-            addTable={addTable} updateTableShape={updateTableShape} 
-            updateTableCapacity={updateTableCapacity} deleteTable={deleteTable}
-            conflictTableIds={conflictTableIds}
-            viewScale={viewScale}
-            setViewScale={setViewScale}
+            canvasRef={canvasRef} tablePos={tablePos} tables={tables} selectedTableId={selectedTableId} dragState={dragState} resizeState={resizeState}
+            handlePointerDown={handlePointerDown} handlePointerMove={handlePointerMove} handlePointerUp={handlePointerUp} handleResizePointerDown={handleResizePointerDown}
+            moveGuest={moveGuest} addTable={addTable} updateTableShape={updateTableShape} updateTableCapacity={updateTableCapacity} deleteTable={deleteTable}
+            conflictTableIds={conflictTableIds} viewScale={viewScale} setViewScale={setViewScale}
           />
       ) : (
-          <Stage3D 
-            tables={tables}
-            tablePos={tablePos}
-          />
+          <Stage3D tables={tables} tablePos={tablePos} />
       )}
     </div>
   );
