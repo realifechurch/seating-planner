@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 
-// --- FORCE UPDATE: Verifying updateGuestDetails is present ---
-
 // Icons
 const IconUserAdd = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>;
 const IconMagic = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>;
@@ -37,7 +35,7 @@ export default function Sidebar({
   tables, 
   autoAssignGroup, 
   addDecor, 
-  updateGuestDetails, // <--- THIS VARIABLE IS HERE.
+  updateGuestDetails, 
   conflicts, addConflict, removeConflict, allGuests, 
   unseatAll, clearUnseatedList
 }) {
@@ -75,12 +73,8 @@ export default function Sidebar({
 
   const saveGuestEdits = () => {
     if (!editingGuest) return;
-    // This is the line that was crashing. 
-    // If updateGuestDetails is missing from the props above, this line fails.
     if (updateGuestDetails) {
         updateGuestDetails(editingGuest.id, { meal: editingGuest.meal, diet: editingGuest.diet });
-    } else {
-        console.error("Critical Error: updateGuestDetails function is missing from Sidebar props.");
     }
     setEditingGuest(null);
   };
@@ -104,11 +98,9 @@ export default function Sidebar({
   const availableGroups = [...new Set(unassigned.map(g => g.group))].filter(g => g !== 'None');
   const realTables = Object.keys(tables || {});
 
-  // Crash-Proof Filter
   const safeUnassigned = Array.isArray(unassigned) ? unassigned : [];
   const filteredGuests = safeUnassigned.filter(g => (g.name || "").toLowerCase().includes(searchTerm.toLowerCase()));
 
-  // Status Indicator Logic
   const getStatusColor = () => {
       if (saveStatus === 'saving') return 'text-amber-500';
       if (saveStatus === 'saved') return 'text-emerald-500';
@@ -133,14 +125,12 @@ export default function Sidebar({
       <div className="p-5 border-b border-black/5">
         <div className="flex justify-between items-center mb-3">
              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Gather.</span>
-             {/* Status Indicator */}
              <div className={`flex items-center gap-1.5 text-[10px] font-semibold ${getStatusColor()} transition-colors duration-500`}>
                 <div className={`w-1.5 h-1.5 rounded-full bg-current ${saveStatus === 'saving' ? 'animate-pulse' : ''}`}></div>
                 {getStatusText()}
              </div>
         </div>
         
-        {/* Title & Undo/Redo */}
         <div className="space-y-3">
              <input value={planName} onChange={e => setPlanName(e.target.value)} placeholder="Untitled Event" className="w-full bg-transparent border-none p-0 text-xl font-semibold text-[#1D1D1F] placeholder-slate-300 focus:ring-0 tracking-tight"/>
              
@@ -182,7 +172,6 @@ export default function Sidebar({
                     </label>
                 </div>
 
-                {/* SEARCH BAR */}
                 <div className="relative">
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><IconSearch/></div>
                     <input 
@@ -242,12 +231,12 @@ export default function Sidebar({
                 <div>
                     <h3 className="text-[10px] uppercase font-bold text-slate-400 mb-3 tracking-widest pl-1">Elements</h3>
                     <div className="grid grid-cols-2 gap-2">
-                        {['dancefloor', 'bar', 'plant', 'dj'].map(type => (
+                        {/* --- ADDED 'STAGE' BUTTON HERE --- */}
+                        {['dancefloor', 'stage', 'bar', 'plant', 'dj'].map(type => (
                             <button key={type} onClick={() => addDecor(type)} className="bg-white hover:bg-slate-50 border border-slate-100 p-3 rounded-2xl text-xs font-semibold text-slate-600 transition shadow-sm capitalize active:scale-[0.98]">{type}</button>
                         ))}
                     </div>
                 </div>
-                {/* Magic Seat */}
                 <div>
                     <h3 className="text-[10px] uppercase font-bold text-slate-400 mb-3 tracking-widest pl-1 flex items-center gap-1"><IconMagic /> Smart Assign</h3>
                     <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
@@ -256,7 +245,6 @@ export default function Sidebar({
                         <button onClick={handleAutoAssign} className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-2.5 rounded-xl text-xs font-bold transition shadow-md shadow-indigo-200 active:scale-[0.98]">Auto-Assign Guests</button>
                     </div>
                 </div>
-                {/* Rules */}
                 <div>
                     <h3 className="text-[10px] uppercase font-bold text-slate-400 mb-3 tracking-widest pl-1 flex items-center gap-1"><IconSettings /> Constraints</h3>
                     <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
